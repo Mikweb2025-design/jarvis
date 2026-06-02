@@ -923,102 +923,236 @@ function bezierCurve(x0,y0,x1,y1,x2,y2,seg){
 }
 
 function drawHoloFace(ctx,w,h,time,color1,color2){
-  var fw=Math.min(w,h)*0.35;
+  var fw=Math.min(w,h)*0.38;
   var cx=w/2,cy=h/2;
   var mouthAmp=0.5+holoMouthOpen*0.5;
-  ctx.shadowBlur=0;
-  ctx.globalAlpha=0.15;
 
-  // Face outline
-  ctx.strokeStyle=color1;ctx.lineWidth=1;ctx.globalAlpha=0.3;
-  ctx.shadowColor=color1;ctx.shadowBlur=12;
+  // ── Helper: draw contour line along face edge ──
+  function faceContour(t){ // t 0→1 around face perimeter
+    var a=t*Math.PI*2;
+    var rx=fw*(0.98+0.02*Math.sin(a*3)*Math.sin(a));
+    var ry=fw*1.25*(0.97+0.03*Math.cos(a*2));
+    return {x:cx+rx*Math.cos(a),y:cy+ry*Math.sin(a)};
+  }
+
+  // Glow layer behind face
+  ctx.globalAlpha=0.06;
+  ctx.fillStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=40;
+  ctx.beginPath();ctx.ellipse(cx,cy,fw*1.1,fw*1.35,0,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+
+  // ── Face outline (double line) ──
+  ctx.strokeStyle=color1;ctx.lineWidth=1.2;ctx.globalAlpha=0.25;
+  ctx.shadowColor=color1;ctx.shadowBlur=10;
   ctx.beginPath();ctx.ellipse(cx,cy,fw,fw*1.25,0,0,Math.PI*2);ctx.stroke();
+  ctx.lineWidth=0.5;ctx.globalAlpha=0.1;
+  ctx.beginPath();ctx.ellipse(cx,cy,fw*0.97,fw*1.22,0,0,Math.PI*2);ctx.stroke();
   ctx.shadowBlur=0;
 
-  // Horizontal scanline sweeping down
-  var scanY=cy+fw*0.8*Math.sin(time*0.0006);
-  ctx.strokeStyle=color1;ctx.globalAlpha=0.08;
-  ctx.shadowColor=color1;ctx.shadowBlur=6;
-  ctx.beginPath();ctx.moveTo(cx-fw*0.9,scanY);ctx.lineTo(cx+fw*0.9,scanY);ctx.stroke();
+  // ── Scanline + glitch bars ──
+  var scanY=cy+fw*0.8*Math.sin(time*0.0008);
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.06;ctx.lineWidth=0.5;
+  ctx.shadowColor=color1;ctx.shadowBlur=4;
+  ctx.beginPath();ctx.moveTo(cx-fw*0.95,scanY);ctx.lineTo(cx+fw*0.95,scanY);ctx.stroke();
   ctx.shadowBlur=0;
 
-  // Vertical face grid lines (curved bezier)
-  var vLines=9;
+  // Glitch scan bars (random)
+  if(Math.sin(time*0.003)>0.92){
+    var gY=cy-fw*1.2+Math.random()*fw*2.4;
+    ctx.fillStyle=color1;ctx.globalAlpha=0.04;
+    ctx.fillRect(cx-fw*0.9,gY,fw*1.8,1+Math.random()*4);
+  }
+  ctx.globalAlpha=1;
+
+  // ── Detailed face wireframe grid ──
+  // Vertical lines (more dense)
+  var vLines=13;
   for(var i=0;i<vLines;i++){
-    var norm=(i/(vLines-1)-0.5)*2;
-    if(Math.abs(norm)>1.2)continue;
+    var norm=(i/(vLines-1)-0.5)*2.2;
+    if(Math.abs(norm)>1.15)continue;
     ctx.globalAlpha=0.12-0.06*Math.abs(norm);
-    ctx.strokeStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=4;
+    ctx.strokeStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=3;
+    ctx.lineWidth=0.6-0.2*Math.abs(norm);
     ctx.beginPath();
-    var pts=bezierCurve(cx+fw*norm,cy-fw*1.2,cx+fw*norm*0.3,cy,cx+fw*norm,cy+fw*1.2,12);
+    var pts=bezierCurve(cx+fw*norm,cy-fw*1.22,cx+fw*norm*0.25,cy,cx+fw*norm,cy+fw*1.22,14);
     pts.forEach(function(p,t){t===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)});
     ctx.stroke();
   }
   ctx.shadowBlur=0;
 
-  // Horizontal face grid lines
-  var hLines=7;
+  // Horizontal lines (more dense, contour-aware)
+  var hLines=11;
   for(var i=0;i<hLines;i++){
     var norm=(i/(hLines-1)-0.5)*2.5;
     var yy=cy+fw*0.5*norm;
-    var spread=fw*Math.sqrt(1-Math.pow(norm/1.25,2))*0.9;
-    ctx.globalAlpha=0.1-0.04*Math.abs(norm);
-    ctx.strokeStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=3;
-    ctx.beginPath();ctx.ellipse(cx,yy,spread,fw*0.03*Math.abs(norm)*0.5,0,0,Math.PI*2);ctx.stroke();
+    var spread=fw*Math.max(0,Math.sqrt(1-Math.pow(norm/1.28,2)))*0.92;
+    ctx.globalAlpha=0.1-0.05*Math.abs(norm);
+    ctx.strokeStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=2;
+    ctx.lineWidth=0.5-0.15*Math.abs(norm);
+    ctx.beginPath();ctx.ellipse(cx,yy,spread,fw*0.02*Math.abs(norm)*0.6,0,0,Math.PI*2);ctx.stroke();
   }
-  ctx.shadowBlur=0;ctx.globalAlpha=1;
+  ctx.shadowBlur=0;
 
-  // Eyes - wireframe hexagonal shapes
-  var eyeY=cy-fw*0.15,eyeSpacing=fw*0.25,eyeSize=fw*0.12;
+  // ── Jawline contour ──
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.12;ctx.lineWidth=0.8;
+  ctx.shadowColor=color1;ctx.shadowBlur=5;
+  ctx.beginPath();
+  for(var t=0.38;t<=0.62;t+=0.02){
+    var p=faceContour(t);
+    t===0.38?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);
+  }
+  ctx.stroke();
+  ctx.shadowBlur=0;
+
+  // ── Nose wireframe ──
+  var noseBridge=fw*0.06, noseTip=fw*0.02, noseLen=fw*0.2;
+  ctx.strokeStyle=color2;ctx.globalAlpha=0.2;ctx.lineWidth=0.6;
+  ctx.shadowColor=color2;ctx.shadowBlur=6;
+  // Bridge lines
+  ctx.beginPath();ctx.moveTo(cx-noseBridge,cy-fw*0.05);
+  ctx.lineTo(cx-noseTip,cy+noseLen);
+  ctx.lineTo(cx+noseTip,cy+noseLen);
+  ctx.lineTo(cx+noseBridge,cy-fw*0.05);ctx.stroke();
+  // Nostrils
+  ctx.beginPath();ctx.ellipse(cx-fw*0.06,cy+noseLen+fw*0.02,fw*0.02,fw*0.01,0.2,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(cx+fw*0.06,cy+noseLen+fw*0.02,fw*0.02,fw*0.01,-0.2,0,Math.PI*2);ctx.stroke();
+  ctx.shadowBlur=0;
+
+  // ── Cheekbone contours ──
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.07;ctx.lineWidth=0.5;
+  ctx.shadowColor=color1;ctx.shadowBlur=3;
+  [1,-1].forEach(function(s){
+    ctx.beginPath();ctx.arc(cx+s*fw*0.45,cy+fw*0.08,fw*0.2,0.8,2.3,false);ctx.stroke();
+  });
+  ctx.shadowBlur=0;
+
+  // ── Eyebrow ridges ──
+  var browY=cy-fw*0.25,browW=fw*0.2,browH=fw*0.04;
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.15;ctx.lineWidth=0.8;
+  ctx.shadowColor=color1;ctx.shadowBlur=4;
+  [-1,1].forEach(function(s){
+    ctx.beginPath();ctx.moveTo(cx+s*browW,browY+browH);
+    ctx.quadraticCurveTo(cx+s*browW*0.6,browY-browH,cx+s*browW*0.1,browY+browH*0.5);ctx.stroke();
+  });
+  ctx.shadowBlur=0;
+
+  // ── Eyes with hexagonal wireframe, irises, blinking ──
+  var eyeY=cy-fw*0.13,eyeSpacing=fw*0.24,eyeSize=fw*0.13;
+  var blink=Math.max(0,Math.sin(time*0.004)*0.5+0.5);
+  blink=blink<0.05?0:blink<0.15?1-(blink-0.05)/0.1:1; // fast blink
+  var eyeScale=blink;
   [-1,1].forEach(function(side){
     var ex=cx+side*eyeSpacing,ey=eyeY;
-    ctx.strokeStyle=color1;ctx.globalAlpha=0.5;ctx.lineWidth=1.2;
-    ctx.shadowColor=color1;ctx.shadowBlur=10;
+    // Outer orbit ring
+    ctx.strokeStyle=color1;ctx.globalAlpha=0.2*eyeScale;ctx.lineWidth=0.6;
+    ctx.shadowColor=color1;ctx.shadowBlur=6;
+    ctx.beginPath();ctx.ellipse(ex,ey,eyeSize*1.3,eyeSize*0.9*eyeScale,0,0,Math.PI*2);ctx.stroke();
+
+    // Hexagon outline
+    ctx.strokeStyle=color1;ctx.globalAlpha=0.5*eyeScale;ctx.lineWidth=1;
+    ctx.shadowColor=color1;ctx.shadowBlur=8;
     ctx.beginPath();
     for(var h=0;h<6;h++){
-      var a=Math.PI/3*h-Math.PI/6+Math.sin(time*0.001)*0.05;
-      ctx[h===0?'moveTo':'lineTo'](ex+eyeSize*Math.cos(a),ey+eyeSize*Math.sin(a));
+      var a=Math.PI/3*h-Math.PI/6+Math.sin(time*0.001+side)*0.03;
+      var rx=eyeSize*Math.cos(a),ry=eyeSize*Math.sin(a)*eyeScale;
+      ctx[h===0?'moveTo':'lineTo'](ex+rx,ey+ry);
     }
     ctx.closePath();ctx.stroke();
 
-    var irisSize=eyeSize*0.4+Math.sin(time*0.002+side)*0.05;
-    ctx.fillStyle=color1;ctx.globalAlpha=0.3;ctx.shadowColor=color1;ctx.shadowBlur=20;
-    ctx.beginPath();ctx.arc(ex,ey,irisSize,0,Math.PI*2);ctx.fill();
+    if(blink>0.1){
+      // Iris
+      var irisSize=eyeSize*0.35+Math.sin(time*0.0015+side)*0.04;
+      ctx.fillStyle=color1;ctx.globalAlpha=0.25*eyeScale;ctx.shadowColor=color1;ctx.shadowBlur=15;
+      ctx.beginPath();ctx.arc(ex,ey,irisSize,0,Math.PI*2);ctx.fill();
 
-    var pupilOff=holoEyeScan*eyeSize*0.3+Math.sin(time*0.003)*eyeSize*0.15;
-    ctx.fillStyle=color1;ctx.globalAlpha=0.8;ctx.shadowColor=color1;ctx.shadowBlur=15;
-    ctx.beginPath();ctx.arc(ex+pupilOff,ey+Math.cos(time*0.002+side)*eyeSize*0.1,eyeSize*0.15,0,Math.PI*2);ctx.fill();
-    ctx.shadowBlur=0;ctx.globalAlpha=1;
+      // Pupil - scanning dot with data ring
+      var pupilOff=holoEyeScan*eyeSize*0.35+Math.sin(time*0.0025)*eyeSize*0.12;
+      ctx.fillStyle=color1;ctx.globalAlpha=0.7*eyeScale;ctx.shadowColor=color1;ctx.shadowBlur=12;
+      ctx.beginPath();ctx.arc(ex+pupilOff,ey+Math.cos(time*0.003+side)*eyeSize*0.08,eyeSize*0.12,0,Math.PI*2);ctx.fill();
+
+      // Inner pupil ring
+      ctx.strokeStyle=color1;ctx.globalAlpha=0.2*eyeScale;ctx.lineWidth=0.3;
+      ctx.beginPath();ctx.arc(ex+pupilOff*0.5,ey,eyeSize*0.18,0,Math.PI*2);ctx.stroke();
+    }
+    ctx.shadowBlur=0;
   });
+  ctx.globalAlpha=1;
 
-  // Mouth - animated arc
-  var mouthY=cy+fw*0.25, mouthW=fw*0.25, mouthH=fw*0.04*(1+mouthAmp*2);
-  ctx.strokeStyle=color2;ctx.globalAlpha=0.6;ctx.lineWidth=1.5;
-  ctx.shadowColor=color2;ctx.shadowBlur=12;
+  // ── Mouth - detailed animated ──
+  var mouthY=cy+fw*0.28, mouthW=fw*0.27, mouthH=fw*0.04*(1+mouthAmp*2.5);
+  // Upper lip
+  ctx.strokeStyle=color2;ctx.globalAlpha=0.5;ctx.lineWidth=1.2;
+  ctx.shadowColor=color2;ctx.shadowBlur=10;
   ctx.beginPath();
   ctx.moveTo(cx-mouthW, mouthY);
-  ctx.quadraticCurveTo(cx, mouthY-mouthH, cx+mouthW, mouthY);
+  ctx.quadraticCurveTo(cx-mouthW*0.7, mouthY-mouthH*0.3, cx-mouthW*0.35, mouthY-mouthH*0.7);
+  ctx.quadraticCurveTo(cx, mouthY-mouthH, cx+mouthW*0.35, mouthY-mouthH*0.7);
+  ctx.quadraticCurveTo(cx+mouthW*0.7, mouthY-mouthH*0.3, cx+mouthW, mouthY);
   ctx.stroke();
 
-  if(mouthAmp>0.1){
-    ctx.strokeStyle=color2;ctx.globalAlpha=0.3;ctx.lineWidth=1;
+  // Lower lip (when speaking)
+  if(mouthAmp>0.15){
+    ctx.strokeStyle=color2;ctx.globalAlpha=0.3;ctx.lineWidth=0.8;
     ctx.beginPath();
-    ctx.moveTo(cx-mouthW*0.8, mouthY+mouthH*0.3);
-    ctx.quadraticCurveTo(cx, mouthY+mouthH*1.2, cx+mouthW*0.8, mouthY+mouthH*0.3);
+    ctx.moveTo(cx-mouthW*0.8, mouthY+mouthH*0.2);
+    ctx.quadraticCurveTo(cx-mouthW*0.5, mouthY+mouthH*1.5, cx, mouthY+mouthH*1.8);
+    ctx.quadraticCurveTo(cx+mouthW*0.5, mouthY+mouthH*1.5, cx+mouthW*0.8, mouthY+mouthH*0.2);
     ctx.stroke();
   }
-  ctx.shadowBlur=0;ctx.globalAlpha=1;
 
-  // Wireframe node glow dots on face outline
-  for(var i=0;i<16;i++){
-    var a=Math.PI*2*i/16;
+  // Mouth corners
+  ctx.fillStyle=color2;ctx.globalAlpha=0.3;ctx.shadowColor=color2;ctx.shadowBlur=6;
+  ctx.beginPath();ctx.arc(cx-mouthW, mouthY,2,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(cx+mouthW, mouthY,2,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+
+  // ── Neural data flow overlay ──
+  ctx.globalAlpha=0.04;
+  for(var i=0;i<12;i++){
+    var theta=Math.PI*2*i/12+time*0.0002;
+    var r1=fw*0.8,r2=fw*1.2;
+    var x1=cx+r1*Math.cos(theta),y1=cy+r1*Math.sin(theta)*1.25;
+    var x2=cx+r2*Math.cos(theta+0.1),y2=cy+r2*Math.sin(theta+0.1)*1.25;
+    ctx.strokeStyle=color1;ctx.globalAlpha=0.03;ctx.lineWidth=0.3;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  }
+
+  // Data dots orbiting
+  ctx.globalAlpha=1;
+  for(var i=0;i<6;i++){
+    var theta=Math.PI*2*i/6+time*0.0004;
+    var rd=fw*0.55+fw*0.1*Math.sin(time*0.001+i);
+    var dx=cx+rd*Math.cos(theta),dy=cy+rd*Math.sin(theta)*1.25;
+    var ds=1+Math.sin(time*0.002+i*2)*0.5;
+    ctx.fillStyle=color1;ctx.globalAlpha=0.1+0.08*Math.sin(time*0.0015+i*3);
+    ctx.shadowColor=color1;ctx.shadowBlur=4;
+    ctx.beginPath();ctx.arc(dx,dy,ds,0,Math.PI*2);ctx.fill();
+  }
+  ctx.shadowBlur=0;
+
+  // ── Wireframe node glow dots on face outline ──
+  for(var i=0;i<20;i++){
+    var a=Math.PI*2*i/20;
     var nx=cx+fw*Math.cos(a),ny=cy+fw*1.25*Math.sin(a);
-    var s=1.5+Math.sin(time*0.001+i)*0.5;
-    ctx.fillStyle=color1;ctx.globalAlpha=0.15+0.1*Math.sin(time*0.002+i);
-    ctx.shadowColor=color1;ctx.shadowBlur=6;
+    var s=1.5+Math.sin(time*0.0015+i*1.7)*0.6;
+    ctx.fillStyle=color1;ctx.globalAlpha=0.12+0.08*Math.sin(time*0.002+i*0.7);
+    ctx.shadowColor=color1;ctx.shadowBlur=5;
     ctx.beginPath();ctx.arc(nx,ny,s,0,Math.PI*2);ctx.fill();
   }
-  ctx.shadowBlur=0;ctx.globalAlpha=1;
+  ctx.shadowBlur=0;
+  ctx.globalAlpha=1;
+
+  // ── Additional inner face node dots at grid intersections ──
+  for(var i=0;i<15;i++){
+    var angle=Math.PI*2*i/15+time*0.0001;
+    var rad=fw*0.3+fw*0.1*Math.sin(i*2.3);
+    var ix=cx+rad*Math.cos(angle),iy=cy+rad*Math.sin(angle)*1.25;
+    ctx.fillStyle=color2;ctx.globalAlpha=0.06+0.04*Math.sin(time*0.002+i);
+    ctx.shadowColor=color2;ctx.shadowBlur=3;
+    ctx.beginPath();ctx.arc(ix,iy,1,0,Math.PI*2);ctx.fill();
+  }
+  ctx.shadowBlur=0;
+  ctx.globalAlpha=1;
 }
 
 function drawNetworkParticles(ctx,particles,w,h,time,color1,color2){
