@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+data/*.db
+data/*.json
+*.onnx
+*.bin
+.DS_Store
+*.egg-info/
+dist/
+build/
