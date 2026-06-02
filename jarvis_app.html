@@ -872,7 +872,7 @@ function selectVoice(el){
 
 // ── HOLOGRAM CANVAS ENGINE ──
 var holoCanvas=null,holoCtx=null,holoAnimId=null;
-var holoParticles=[],holoCube={rotX:0,rotY:0,rotZ:0};
+var holoParticles=[],holoMouthOpen=0,holoEyeScan=0;
 var holoThemeColors={cyberpunk:{c1:'#00f0ff',c2:'#ff00aa',c3:'#aa00ff'},holo:{c1:'#4ad8ff',c2:'#7ec8ff',c3:'#3aa0ff'},sunset:{c1:'#ff8800',c2:'#ff2255',c3:'#ff6600'},matrix:{c1:'#00ff41',c2:'#33ff77',c3:'#00ff88'},crystal:{c1:'#88ddff',c2:'#ff88cc',c3:'#c888ff'}};
 
 function initHoloCanvas(){
@@ -910,73 +910,115 @@ function getThemeColor(idx){
   return idx===0?colors.c1:idx===1?colors.c2:colors.c3;
 }
 
-function project3D(x,y,z,w,h){
-  var dist=2.5;
-  var scale=dist/(dist+z);
-  var px=x*scale*Math.min(w,h)*0.3;
-  var py=y*scale*Math.min(w,h)*0.3;
-  return {x:px+w/2,y:py+h/2,z:z,scale:scale};
-}
-
-function rotateX(p,angle){
-  var cos=Math.cos(angle),sin=Math.sin(angle);
-  return {x:p.x,y:p.y*cos-p.z*sin,z:p.y*sin+p.z*cos};
-}
-function rotateY(p,angle){
-  var cos=Math.cos(angle),sin=Math.sin(angle);
-  return {x:p.x*cos+p.z*sin,y:p.y,z:-p.x*sin+p.z*cos};
-}
-function rotateZ(p,angle){
-  var cos=Math.cos(angle),sin=Math.sin(angle);
-  return {x:p.x*cos-p.y*sin,y:p.x*sin+p.y*cos,z:p.z};
-}
-
-function drawWireframeCube(ctx,w,h,rotX,rotY,rotZ,color){
-  var verts=[];
-  for(var i=0;i<8;i++){
-    var v={x:(i&1?1:-1)*0.8,y:(i&2?1:-1)*0.8,z:(i&4?1:-1)*0.8};
-    v=rotateX(v,rotX);v=rotateY(v,rotY);v=rotateZ(v,rotZ);
-    verts.push(project3D(v.x,v.y,v.z,w,h));
+function bezierCurve(x0,y0,x1,y1,x2,y2,seg){
+  var pts=[];
+  for(var i=0;i<=seg;i++){
+    var t=i/seg;
+    var mt=1-t;
+    var x=mt*mt*x0+2*mt*t*x1+t*t*x2;
+    var y=mt*mt*y0+2*mt*t*y1+t*t*y2;
+    pts.push({x:x,y:y});
   }
-  var edges=[
-    [0,1],[1,3],[3,2],[2,0],
-    [4,5],[5,7],[7,6],[6,4],
-    [0,4],[1,5],[2,6],[3,7]
-  ];
-  ctx.strokeStyle=color;ctx.lineWidth=1;
-  ctx.shadowColor=color;ctx.shadowBlur=8;
-  ctx.beginPath();
-  edges.forEach(function(e){
-    var p1=verts[e[0]],p2=verts[e[1]];
-    ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);
-  });
-  ctx.stroke();
+  return pts;
+}
+
+function drawHoloFace(ctx,w,h,time,color1,color2){
+  var fw=Math.min(w,h)*0.35;
+  var cx=w/2,cy=h/2;
+  var mouthAmp=0.5+holoMouthOpen*0.5;
+  ctx.shadowBlur=0;
+  ctx.globalAlpha=0.15;
+
+  // Face outline
+  ctx.strokeStyle=color1;ctx.lineWidth=1;ctx.globalAlpha=0.3;
+  ctx.shadowColor=color1;ctx.shadowBlur=12;
+  ctx.beginPath();ctx.ellipse(cx,cy,fw,fw*1.25,0,0,Math.PI*2);ctx.stroke();
   ctx.shadowBlur=0;
 
-  // Inner glow vertices
-  verts.forEach(function(v){
-    var s=3*v.scale;
-    ctx.fillStyle=color;ctx.shadowColor=color;ctx.shadowBlur=15;
-    ctx.beginPath();ctx.arc(v.x,v.y,s,0,Math.PI*2);ctx.fill();
-    ctx.shadowBlur=0;
-  });
-}
+  // Horizontal scanline sweeping down
+  var scanY=cy+fw*0.8*Math.sin(time*0.0006);
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.08;
+  ctx.shadowColor=color1;ctx.shadowBlur=6;
+  ctx.beginPath();ctx.moveTo(cx-fw*0.9,scanY);ctx.lineTo(cx+fw*0.9,scanY);ctx.stroke();
+  ctx.shadowBlur=0;
 
-function drawSecondCube(ctx,w,h,rotX,rotY,rotZ,color){
-  var verts=[];
-  for(var i=0;i<8;i++){
-    var v={x:(i&1?1:-1)*0.4,y:(i&2?1:-1)*0.4,z:(i&4?1:-1)*0.4};
-    v=rotateX(v,-rotX*0.7);v=rotateY(v,-rotY*0.7);v=rotateZ(v,rotZ*0.5);
-    verts.push(project3D(v.x,v.y,v.z,w,h));
+  // Vertical face grid lines (curved bezier)
+  var vLines=9;
+  for(var i=0;i<vLines;i++){
+    var norm=(i/(vLines-1)-0.5)*2;
+    if(Math.abs(norm)>1.2)continue;
+    ctx.globalAlpha=0.12-0.06*Math.abs(norm);
+    ctx.strokeStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=4;
+    ctx.beginPath();
+    var pts=bezierCurve(cx+fw*norm,cy-fw*1.2,cx+fw*norm*0.3,cy,cx+fw*norm,cy+fw*1.2,12);
+    pts.forEach(function(p,t){t===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)});
+    ctx.stroke();
   }
-  var edges=[[0,1],[1,3],[3,2],[2,0],[4,5],[5,7],[7,6],[6,4],[0,4],[1,5],[2,6],[3,7]];
-  ctx.strokeStyle=color;ctx.lineWidth=0.6;
-  ctx.globalAlpha=0.4;ctx.shadowColor=color;ctx.shadowBlur=4;
-  ctx.beginPath();
-  edges.forEach(function(e){
-    ctx.moveTo(verts[e[0]].x,verts[e[0]].y);ctx.lineTo(verts[e[1]].x,verts[e[1]].y);
+  ctx.shadowBlur=0;
+
+  // Horizontal face grid lines
+  var hLines=7;
+  for(var i=0;i<hLines;i++){
+    var norm=(i/(hLines-1)-0.5)*2.5;
+    var yy=cy+fw*0.5*norm;
+    var spread=fw*Math.sqrt(1-Math.pow(norm/1.25,2))*0.9;
+    ctx.globalAlpha=0.1-0.04*Math.abs(norm);
+    ctx.strokeStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=3;
+    ctx.beginPath();ctx.ellipse(cx,yy,spread,fw*0.03*Math.abs(norm)*0.5,0,0,Math.PI*2);ctx.stroke();
+  }
+  ctx.shadowBlur=0;ctx.globalAlpha=1;
+
+  // Eyes - wireframe hexagonal shapes
+  var eyeY=cy-fw*0.15,eyeSpacing=fw*0.25,eyeSize=fw*0.12;
+  [-1,1].forEach(function(side){
+    var ex=cx+side*eyeSpacing,ey=eyeY;
+    ctx.strokeStyle=color1;ctx.globalAlpha=0.5;ctx.lineWidth=1.2;
+    ctx.shadowColor=color1;ctx.shadowBlur=10;
+    ctx.beginPath();
+    for(var h=0;h<6;h++){
+      var a=Math.PI/3*h-Math.PI/6+Math.sin(time*0.001)*0.05;
+      ctx[h===0?'moveTo':'lineTo'](ex+eyeSize*Math.cos(a),ey+eyeSize*Math.sin(a));
+    }
+    ctx.closePath();ctx.stroke();
+
+    var irisSize=eyeSize*0.4+Math.sin(time*0.002+side)*0.05;
+    ctx.fillStyle=color1;ctx.globalAlpha=0.3;ctx.shadowColor=color1;ctx.shadowBlur=20;
+    ctx.beginPath();ctx.arc(ex,ey,irisSize,0,Math.PI*2);ctx.fill();
+
+    var pupilOff=holoEyeScan*eyeSize*0.3+Math.sin(time*0.003)*eyeSize*0.15;
+    ctx.fillStyle=color1;ctx.globalAlpha=0.8;ctx.shadowColor=color1;ctx.shadowBlur=15;
+    ctx.beginPath();ctx.arc(ex+pupilOff,ey+Math.cos(time*0.002+side)*eyeSize*0.1,eyeSize*0.15,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;ctx.globalAlpha=1;
   });
-  ctx.stroke();ctx.globalAlpha=1;ctx.shadowBlur=0;
+
+  // Mouth - animated arc
+  var mouthY=cy+fw*0.25, mouthW=fw*0.25, mouthH=fw*0.04*(1+mouthAmp*2);
+  ctx.strokeStyle=color2;ctx.globalAlpha=0.6;ctx.lineWidth=1.5;
+  ctx.shadowColor=color2;ctx.shadowBlur=12;
+  ctx.beginPath();
+  ctx.moveTo(cx-mouthW, mouthY);
+  ctx.quadraticCurveTo(cx, mouthY-mouthH, cx+mouthW, mouthY);
+  ctx.stroke();
+
+  if(mouthAmp>0.1){
+    ctx.strokeStyle=color2;ctx.globalAlpha=0.3;ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(cx-mouthW*0.8, mouthY+mouthH*0.3);
+    ctx.quadraticCurveTo(cx, mouthY+mouthH*1.2, cx+mouthW*0.8, mouthY+mouthH*0.3);
+    ctx.stroke();
+  }
+  ctx.shadowBlur=0;ctx.globalAlpha=1;
+
+  // Wireframe node glow dots on face outline
+  for(var i=0;i<16;i++){
+    var a=Math.PI*2*i/16;
+    var nx=cx+fw*Math.cos(a),ny=cy+fw*1.25*Math.sin(a);
+    var s=1.5+Math.sin(time*0.001+i)*0.5;
+    ctx.fillStyle=color1;ctx.globalAlpha=0.15+0.1*Math.sin(time*0.002+i);
+    ctx.shadowColor=color1;ctx.shadowBlur=6;
+    ctx.beginPath();ctx.arc(nx,ny,s,0,Math.PI*2);ctx.fill();
+  }
+  ctx.shadowBlur=0;ctx.globalAlpha=1;
 }
 
 function drawNetworkParticles(ctx,particles,w,h,time,color1,color2){
@@ -1057,36 +1099,26 @@ function renderHolo(time){
   ctx.clearRect(0,0,w,h);
 
   var color1=getThemeColor(0),color2=getThemeColor(1),color3=getThemeColor(2);
-  var theme=localStorage.getItem('jarvis-theme')||'cyberpunk';
-
-  // Dynamic rotation
-  holoCube.rotX+=0.004;
-  holoCube.rotY+=0.006;
-  holoCube.rotZ+=0.002;
 
   // Data streams (background)
   drawDataStreams(ctx,w,h,time,color1);
 
-  // Outer ring
-  drawPulseRing(ctx,w/2,h/2,Math.min(w,h)*0.25,time,color1);
-  drawPulseRing(ctx,w/2,h/2,Math.min(w,h)*0.18,time,color2);
-  drawPulseRing(ctx,w/2,h/2,Math.min(w,h)*0.32,time,color3);
+  // Outer rings
+  drawPulseRing(ctx,w/2,h/2,Math.min(w,h)*0.32,time,color1);
+  drawPulseRing(ctx,w/2,h/2,Math.min(w,h)*0.28,time,color3);
+  drawPulseRing(ctx,w/2,h/2,Math.min(w,h)*0.24,time,color2);
 
-  // Main wireframe cube
-  drawWireframeCube(ctx,w,h,holoCube.rotX,holoCube.rotY,holoCube.rotZ,color1);
+  // Holographic AI face
+  drawHoloFace(ctx,w,h,time,color1,color2);
 
-  // Inner counter-rotating cube
-  drawSecondCube(ctx,w,h,holoCube.rotX,holoCube.rotY,holoCube.rotZ,color2);
-
-  // Network particles
+  // Network particles (background)
   drawNetworkParticles(ctx,holoParticles,w,h,time,color1,color2);
 
-  // Central glow
-  var cx=w/2,cy=h/2;
+  // Central glow behind face
   var pulse=Math.sin(time*0.0015)*0.3+0.5;
-  ctx.globalAlpha=0.06*pulse;
-  ctx.fillStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=30;
-  ctx.beginPath();ctx.arc(cx,cy,Math.min(w,h)*0.04,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=0.04*pulse;
+  ctx.fillStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=40;
+  ctx.beginPath();ctx.arc(w/2,h/2,Math.min(w,h)*0.06,0,Math.PI*2);ctx.fill();
   ctx.shadowBlur=0;ctx.globalAlpha=1;
 
   holoAnimId=requestAnimationFrame(renderHolo);
@@ -1149,14 +1181,17 @@ function setHoloState(state){
     if(reactor)reactor.style.opacity='0.6';
     if(core){core.style.background='var(--am)';core.style.boxShadow='0 0 20px var(--amg),0 0 60px rgba(255,170,0,0.4)'}
     if(status){status.textContent='◉ PROCESSING...';status.className='thinking'}
+    holoMouthOpen=0.2;holoEyeScan=0.6;
   }else if(state==='speaking'){
     if(reactor)reactor.style.opacity='0.5';
     if(core){core.style.background='var(--cy)';core.style.boxShadow='0 0 20px var(--cyg),0 0 60px rgba(0,240,255,0.4)'}
     if(status){status.textContent='◉ SPEAKING...';status.className='speaking'}
+    holoMouthOpen=1;holoEyeScan=0.3;
   }else{
-    if(reactor)reactor.style.opacity='0.35';
+    if(reactor)reactor.style.opacity='var(--reactor-bg,0.35)';
     if(core){core.style.background='var(--cy)';core.style.boxShadow='0 0 20px var(--cyg),0 0 60px rgba(0,240,255,0.2)'}
     if(status){status.textContent='◆ SYSTEM STANDBY ◆';status.className='idle'}
+    holoMouthOpen=0;holoEyeScan=0;
   }
 }
 
