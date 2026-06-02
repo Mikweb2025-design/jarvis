@@ -442,6 +442,23 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 .weather-city{font-family:var(--fm);font-size:8px;color:var(--tx3);letter-spacing:0.2em}
 .weather-desc{font-size:10px;color:var(--tx2);font-family:var(--fb)}
 .weather-details{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin-top:6px}
+
+/* ── WEBCAM WIDGET ── */
+#webcam-widget{position:absolute;top:8%;left:5%;width:90%;height:84%;z-index:10;display:flex;flex-direction:column;
+  border:1px solid var(--pk);box-shadow:0 0 40px rgba(0,240,255,0.15);background:rgba(0,5,10,0.92);backdrop-filter:blur(16px);
+  transition:opacity 0.3s,transform 0.3s}
+#webcam-widget.hidden{opacity:0;transform:scale(0.95);pointer-events:none}
+#webcam-header{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;background:rgba(0,240,255,0.05);
+  border-bottom:1px solid rgba(0,240,255,0.1);font-family:var(--fm);font-size:9px;letter-spacing:0.15em;color:var(--cy)}
+#webcam-close{cursor:pointer;color:var(--tx2);font-size:14px;padding:2px 8px}
+#webcam-close:hover{color:var(--pk)}
+#webcam-body{flex:1;position:relative;overflow:hidden;background:#000}
+#webcam-iframe{width:100%;height:100%;border:none;position:relative}
+#webcam-iframe iframe{width:100%;height:100%;border:none}
+#webcam-footer{display:flex;justify-content:space-between;padding:4px 12px;background:rgba(0,0,0,0.6);
+  border-top:1px solid rgba(0,240,255,0.08);font-family:var(--fm);font-size:8px;letter-spacing:0.1em}
+#webcam-city{color:var(--cy)}
+#webcam-status{color:#0f0}
 .weather-detail{font-family:var(--fm);font-size:7px;color:var(--tx4)}
 .weather-detail span{color:var(--tx2)}
 
@@ -710,6 +727,21 @@ html.theme-crystal #holo-canvas{opacity:0.55}
       <div class="section-label">SESSION LOG</div>
       <div class="log-box" id="log-box"></div>
     </div>
+  </div>
+</div>
+
+<!-- Webcam Widget -->
+<div id="webcam-widget" class="hidden">
+  <div id="webcam-header">
+    <span id="webcam-title">📡 WEBCAM</span>
+    <button id="webcam-close" onclick="closeWebcam()">✕</button>
+  </div>
+  <div id="webcam-body">
+    <div id="webcam-iframe" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></div>
+  </div>
+  <div id="webcam-footer">
+    <span id="webcam-city">--</span>
+    <span id="webcam-status">● LIVE</span>
   </div>
 </div>
 
@@ -1322,6 +1354,131 @@ function usermsg(t){
   msgsEl.appendChild(d);msgsEl.scrollTop=msgsEl.scrollHeight;
 }
 
+// ── WEBCAM ──
+var webcamYTPlayer=null,webcamYTLoaded=false;
+var webcamSources={
+  'tokyo':['8H3nRCFVR6Y','Shibuya Scramble'],
+  'shibuya':['8H3nRCFVR6Y','Shibuya Crossing'],
+  'shinjuku':['8H3nRCFVR6Y','Shinjuku Kabukicho'],
+  'roma':['54_skPGLNhA','Roma Colosseo'],
+  'rome':['54_skPGLNhA','Rome Colosseum'],
+  'new york':['VGnFLdQW39A','Times Square NYC'],
+  'new york city':['VGnFLdQW39A','Times Square NYC'],
+  'nyc':['VGnFLdQW39A','Times Square NYC'],
+  'londra':['WKGK_hYnlGE','London Live'],
+  'london':['WKGK_hYnlGE','London Live'],
+  'parigi':['QcOYSVrPCAc','Paris Eiffel Tower'],
+  'paris':['QcOYSVrPCAc','Paris Eiffel Tower'],
+  'berlin':['__EMBED__data:text/html;charset=utf-8,'+encodeURIComponent('<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;overflow:hidden;background:#000}video{width:100vw;height:100vh;object-fit:cover}</style></head><body><video id="v" autoplay muted playsinline></video><script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></scr'+'ipt><script>var v=document.getElementById("v");var u="https://cdn.livespotting.com/vpu/ehlpzb4g/nkw9elfh.m3u8";if(Hls.isSupported()){var h=new Hls();h.loadSource(u);h.attachMedia(v);h.on(Hls.Events.MANIFEST_PARSED,function(){v.play();})}else if(v.canPlayType("application/vnd.apple.mpegurl")){v.src=u}</scr'+'ipt></body></html>'),'Berlin 24/7 Live'],
+  'berlino':['__EMBED__data:text/html;charset=utf-8,'+encodeURIComponent('<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;overflow:hidden;background:#000}video{width:100vw;height:100vh;object-fit:cover}</style></head><body><video id="v" autoplay muted playsinline></video><script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></scr'+'ipt><script>var v=document.getElementById("v");var u="https://cdn.livespotting.com/vpu/ehlpzb4g/nkw9elfh.m3u8";if(Hls.isSupported()){var h=new Hls();h.loadSource(u);h.attachMedia(v);h.on(Hls.Events.MANIFEST_PARSED,function(){v.play();})}else if(v.canPlayType("application/vnd.apple.mpegurl")){v.src=u}</scr'+'ipt></body></html>'),'Berlino 24/7 Live'],
+  'milano':['28BXLXTP63E','Milano Duomo Live'],
+  'milan':['28BXLXTP63E','Milan Duomo Live'],
+  'venezia':['CMn6xQXuSjI','Venezia Canal Grande'],
+  'venice':['CMn6xQXuSjI','Venice Grand Canal'],
+  'dubai':['Q7h0D-Fu20k','Dubai Marina'],
+  'barcellona':['1Zd10zOj628','Barcelona Beach'],
+  'barcelona':['1Zd10zOj628','Barcelona Beach'],
+  'bibione':['__EMBED__https://services.whatsupcams.com/wgt/it_bibione09/','Bibione Spiaggia Live'],
+  'jesolo':['1-6FHrCJKtA','Jesolo Spiaggia Live'],
+};
+
+function loadYTAPI(){
+  if(webcamYTLoaded||window.YT)return;
+  var tag=document.createElement('script');
+  tag.src='https://www.youtube.com/iframe_api';
+  var first=document.getElementsByTagName('script')[0];
+  first.parentNode.insertBefore(tag,first);
+}
+
+function openWebcam(city, lat, lon, video_id){
+  closeWebcam();
+  var w=document.getElementById('webcam-widget');
+  var t=document.getElementById('webcam-title');
+  var c=document.getElementById('webcam-city');
+  var s=document.getElementById('webcam-status');
+  if(!w)return;
+  var cityLower=city.toLowerCase();
+  var src=webcamSources[cityLower];
+  if(!src){
+    var keys=Object.keys(webcamSources);
+    for(var i=0;i<keys.length;i++){
+      if(cityLower.includes(keys[i])||keys[i].includes(cityLower)){src=webcamSources[keys[i]];break}
+    }
+  }
+  c.textContent=city.toUpperCase();
+  s.textContent='\u25CF LIVE';
+  w.classList.remove('hidden');
+  var vid=src?src[0]:video_id;
+  if(vid){
+    if(t)t.textContent='📡 '+(src?src[1]:city);
+    playYT(vid);
+  }else{
+    if(t)t.textContent='📡 '+city+' WEBCAM';
+    var f=document.getElementById('webcam-iframe');
+    if(f){
+      f.innerHTML='';
+      var ifr=document.createElement('iframe');
+      ifr.src='https://www.youtube.com/embed?listType=search&list='+encodeURIComponent(city+' live webcam 4k')+'&autoplay=1&mute=1&controls=0';
+      ifr.style.cssText='width:100%;height:100%;border:none';
+      ifr.setAttribute('allow','autoplay; encrypted-media; picture-in-picture');
+      ifr.setAttribute('allowfullscreen','');
+      f.appendChild(ifr);
+    }
+  }
+  log('webcam: '+city);
+}
+
+function playYT(videoId){
+  var body=document.getElementById('webcam-body');
+  var f=document.getElementById('webcam-iframe');
+  if(!f||!body)return;
+  f.innerHTML='';
+  if(typeof videoId==='string'&&videoId.startsWith('__EMBED__')){
+    var embedUrl=videoId.slice(9);
+    var ifr=document.createElement('iframe');
+    ifr.src=embedUrl;
+    ifr.style.cssText='width:100%;height:100%;border:none';
+    ifr.setAttribute('allow','autoplay; encrypted-media; picture-in-picture');
+    ifr.setAttribute('allowfullscreen','');
+    f.appendChild(ifr);
+    return;
+  }
+  loadYTAPI();
+  if(typeof YT!=='undefined'&&YT.Player){
+    if(webcamYTPlayer&&webcamYTPlayer.destroy)webcamYTPlayer.destroy();
+    webcamYTPlayer=new YT.Player(f,{
+      height:'100%',width:'100%',
+      videoId:videoId,
+      playerVars:{autoplay:1,mute:1,controls:0,rel:0,modestbranding:1},
+      events:{
+        onReady:function(e){e.target.mute();e.target.playVideo();},
+        onError:function(){
+          f.innerHTML='';
+          var ifr=document.createElement('iframe');
+          ifr.src='https://www.youtube.com/embed/'+videoId+'?autoplay=1&mute=1&controls=0';
+          ifr.style.cssText='width:100%;height:100%;border:none';
+          f.appendChild(ifr);
+        }
+      }
+    });
+  }else{
+    var ifr=document.createElement('iframe');
+    ifr.src='https://www.youtube.com/embed/'+videoId+'?autoplay=1&mute=1&controls=0&rel=0&modestbranding=1';
+    ifr.style.cssText='width:100%;height:100%;border:none';
+    ifr.setAttribute('allow','autoplay; encrypted-media; picture-in-picture');
+    ifr.setAttribute('allowfullscreen','');
+    f.appendChild(ifr);
+  }
+}
+
+function closeWebcam(){
+  var w=document.getElementById('webcam-widget');
+  var f=document.getElementById('webcam-iframe');
+  if(w)w.classList.add('hidden');
+  if(webcamYTPlayer&&webcamYTPlayer.destroy){try{webcamYTPlayer.destroy()}catch(e){}webcamYTPlayer=null}
+  if(f)f.innerHTML='';
+}
+
 function weatherCardHTML(d){
   var icons={0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',55:'🌦️',61:'🌧️',65:'🌧️',71:'❄️',77:'❄️',80:'🌦️',82:'🌦️',95:'⛈️',99:'⛈️'};
   function wico(c){return icons[c]||(c>=51&&c<=55?'🌦️':c>=61&&c<=65?'🌧️':c>=71&&c<=77?'❄️':c>=80&&c<=82?'🌦️':c>=95?'⛈️':'❓')}
@@ -1345,6 +1502,7 @@ function botmsg(t,actions){
   var acts=[], wc='';
   (actions||[]).forEach(function(a){
     if(a.startsWith('WEATHER_CARD:')){try{wc=weatherCardHTML(JSON.parse(a.slice(13)))}catch(e){}}
+    else if(a.startsWith('WEBCAM:')){try{var wd=JSON.parse(a.slice(7));openWebcam(wd.city,wd.lat,wd.lon,wd.video_id)}catch(e){}}
     else{acts.push('<div style="font-size:6px;color:var(--pk);font-family:var(--fm);padding-left:18px">> '+esc(a)+'</div>')}
   });
   var rendered=typeof marked!=='undefined'?marked.parse(t||''):t.replace(/\n/g,'<br>');

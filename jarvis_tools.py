@@ -76,6 +76,13 @@ TOOLS_SCHEMA = [
     {"type":"function","function":{"name":"mail_recent","description":"Email recenti","parameters":{"type":"object","properties":{"limit":{"type":"integer","default":5}}}}},
     {"type":"function","function":{"name":"mail_search","description":"Cerca email","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}},
     {"type":"function","function":{"name":"mail_read_aloud","description":"Legge email non lette ad alta voce","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"mail_send","description":"Invia email con Apple Mail","parameters":{"type":"object","properties":{
+        "to":{"type":"string","description":"Destinatario (email o nome <email>)"},
+        "subject":{"type":"string","description":"Oggetto dell'email"},
+        "body":{"type":"string","description":"Corpo del messaggio"},
+        "cc":{"type":"string","description":"CC opzionale","default":""},
+        "bcc":{"type":"string","description":"BCC opzionale","default":""}
+    },"required":["to","subject","body"]}}},
     # Notes
     {"type":"function","function":{"name":"notes_create","description":"Crea nota","parameters":{"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string","default":""}},"required":["title"]}}},
     {"type":"function","function":{"name":"notes_search","description":"Cerca note","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}},
@@ -271,6 +278,44 @@ def mail_read_aloud(**_):
     speech = format_emails_for_speech(emails_data)
     return speech
 
+def mail_send(to="", subject="", body="", cc="", bcc="", **_):
+    """Invia email tramite Apple Mail con AppleScript"""
+    if not to or not subject or not body:
+        return "⚠ Servono destinatario, oggetto e corpo."
+    import subprocess, re as _re
+    def esc(s):
+        return s.replace('\\','\\\\').replace('"','\\"').replace('\n','\\n')
+    # Se "to" sembra un nome (no @), usa {name} invece di {address}
+    if '@' in to:
+        to_props = '{{address:"{0}"}}'.format(esc(to))
+    else:
+        to_props = '{{name:"{0}"}}'.format(esc(to))
+    script = f'''
+    tell application "Mail"
+        set newMsg to make new outgoing message with properties {{subject:"{esc(subject)}", content:"{esc(body)}", visible:true}}
+        tell newMsg
+            make new to recipient at end of to recipients with properties {to_props}
+    '''
+    def _p(s):
+        return '{{name:"{0}"}}'.format(esc(s)) if '@' not in s else '{{address:"{0}"}}'.format(esc(s))
+    if cc:
+        script += f'''
+            make new cc recipient at end of cc recipients with properties {_p(cc)}
+    '''
+    if bcc:
+        script += f'''
+            make new bcc recipient at end of bcc recipients with properties {_p(bcc)}
+    '''
+    script += '''
+            send
+        end tell
+    end tell'''
+    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=30)
+    if r.returncode == 0:
+        return f"✅ Email inviata a {to} con oggetto \"{subject}\""
+    err = (r.stderr or r.stdout or '').strip()
+    return f"⚠ Errore invio email: {err}"
+
 # ── NOTES ──
 def notes_create(title="", body="", **_): return create_note(title, body)
 def notes_search(query="", **_): return search_notes(query)
@@ -398,6 +443,7 @@ HANDLERS = {
     "calendar_today":calendar_today,"calendar_upcoming":calendar_upcoming,
     "calendar_create":calendar_create,"calendar_list":calendar_list,"calendar_open":calendar_open,
     "mail_unread":mail_unread,"mail_recent":mail_recent,"mail_search":mail_search,"mail_read_aloud":mail_read_aloud,
+    "mail_send":mail_send,
     "notes_create":notes_create,"notes_search":notes_search,"notes_list":notes_list,
     "screen_info":screen_info,"screen_frontmost":screen_frontmost,
     "browser_tabs":browser_tabs,"browser_current":browser_current,"browser_scroll":browser_scroll,

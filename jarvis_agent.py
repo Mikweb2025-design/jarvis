@@ -12,7 +12,7 @@ SYSTEM_PROMPT = """Sei J.A.R.V.I.S. — Just A Rather Very Intelligent System, l
 CAPACITÀ:
 - Controllo completo del Mac: app, file, sistema, volume, brightness, screenshot
 - Calendar: leggi e crea eventi
-- Mail: leggi email non lette e cerca (read-only)
+- Mail: leggi email non lette, cerca e invia email con Apple Mail
 - Notes: crea, cerca e leggi note
 - Browser: apri URL, cerca, gestisci tab Chrome, automazione Playwright
 - File management: crea, leggi, cerca, organizza, elimina file
@@ -62,8 +62,34 @@ class JarvisAgent:
         actions_done = []
         lower = user_message.lower().strip()
 
+        # invia email (PRIORITÀ — prima di calendario, per evitare falsi positivi)
+        if not actions_done and any(w in lower for w in ['invia email', 'invia una email', 'manda email', 'manda una email', 'spedisci email']):
+            import re as _re
+            to = subject = body = ''
+            # Extract "to" — stop at "con", "dicendo", "che", "oggetto", "corpo", end
+            a_m = _re.search(r'(?:invia|manda|spedisci)\s+(?:una\s+)?email\s+a\s+([\w.@+\-_]+(?:\s+[\w.@+\-_]+)*?)(?:\s+con\s+|\s+dicendo\s+|\s+che\s+|\s+oggetto\s+|\s+corpo\s+|$)', user_message, _re.IGNORECASE)
+            if a_m:
+                to = a_m.group(1).strip().rstrip('.,!?')
+            og_m = _re.search(r'(?:oggetto|subject)\s*:?\s*["""]?(.+?)["""]?(?:\s+corpo\s*:?\s*|["""]?\s*$)', user_message, _re.IGNORECASE)
+            if og_m:
+                subject = og_m.group(1).strip().rstrip('.,!?')
+            co_m = _re.search(r'(?:corpo|body|contenuto|messaggio)\s*:?\s*["""]?(.+?)["""]?(?:\s*$)', user_message, _re.IGNORECASE)
+            if co_m:
+                body = co_m.group(1).strip().rstrip('.,!?')
+            if not body:
+                # Fallback: take everything after "dicendo che" / "dicendo" / "che"
+                fb = _re.search(r'(?:dicendo\s+che|dicendo|che)\s+(.+)$', user_message, _re.IGNORECASE)
+                if fb:
+                    body = fb.group(1).strip().rstrip('.,!?')
+            if to:
+                result = execute_tool('mail_send', {'to': to, 'subject': subject or 'Inviata da JARVIS', 'body': body or ' '})
+                actions_done.append(f'mail_send: {result}')
+                actions_done.append(f'SPEECH:{"✅ " + result.strip("✅ ")}')
+            else:
+                actions_done.append(f'SPEECH:Per inviare email serve il destinatario. Dimmi "invia email a [indirizzo] con oggetto [oggetto] e corpo [testo]"')
+
         # crea evento calendario (PRIORITÀ — prima di "apri app")
-        if any(w in lower for w in ['appuntamento', 'evento', 'riunione', 'meeting']):
+        if not actions_done and any(w in lower for w in ['appuntamento', 'evento', 'riunione', 'meeting']):
             time_match = re.search(r'(\d{1,2}):(\d{2})', lower)
             hour = int(time_match.group(1)) if time_match else 12
             minute = int(time_match.group(2)) if time_match else 0
@@ -199,6 +225,79 @@ class JarvisAgent:
             actions_done.append(f'SPEECH:{speech}')
             if weather_card:
                 actions_done.append(f'WEATHER_CARD:{_json.dumps(weather_card, ensure_ascii=False)}')
+
+        # webcam / satellite — apre webcam widget nel dashboard
+        if not actions_done and any(w in lower for w in ['fammi vedere', 'mostrami', 'webcam', 'satellite', 'mostra', 'telecamera', 'videocamera']):
+            wc_city = None
+            # 1) Try to extract city right after a trigger prefix
+            for prefix in ['fammi vedere ', 'mostrami ', 'webcam ', 'satellite ', 'mostra ', 'telecamera ', 'videocamera ', 'apri satellite ']:
+                if prefix in lower:
+                    rest = user_message[lower.index(prefix)+len(prefix):].strip().rstrip('.,!?')
+                    if rest:
+                        # Take words that start with uppercase (city/proper names)
+                        words = rest.split()
+                        candidate = ''
+                        for w in words:
+                            w_clean = w.rstrip('.,!?')
+                            if w_clean and w_clean[0].isupper():
+                                candidate += (' ' + w_clean if candidate else w_clean)
+                            else:
+                                break
+                        if candidate:
+                            wc_city = candidate
+                            break
+                        # Fallback: capitalize all words (handles "milano" -> "Milano")
+                        wc_city = ' '.join(w.rstrip('.,!?').capitalize() for w in words)
+                        break
+            # 2) Try preposition pattern
+            if not wc_city:
+                city_match = re.search(r'(?:a|di|del|della|per|su)\s+([A-ZÀ-Ö][a-zà-ö]+(?:\s+[A-ZÀ-Ö][a-zà-ö]+)*)', user_message)
+                if city_match:
+                    wc_city = city_match.group(1).strip()
+            # 3) Try conversation history for last city mentioned
+            if not wc_city:
+                for msg in reversed(self.history):
+                    text = msg.get('content', '') if isinstance(msg, dict) else ''
+                    city_in = re.search(r'(?:fammi vedere|mostrami|webcam|mostra|satellite|apertura webcam per|per\s+mostrare|visualizzare|vista satellitare di)\s+([A-ZÀ-Ö][a-zà-ö]+(?:\s+[A-ZÀ-Ö][a-zà-ö]+)*)', text, re.IGNORECASE)
+                    if city_in:
+                        wc_city = city_in.group(1).strip()
+                        break
+            # 4) Default
+            if not wc_city:
+                wc_city = "Milano"
+            if wc_city:
+                wc_lat, wc_lon = None, None
+                try:
+                    import requests as _req
+                    wc_r = _req.get(f'https://geocoding-api.open-meteo.com/v1/search?name={wc_city}&count=1&language=it&format=json', timeout=8)
+                    if wc_r.ok and wc_r.json().get('results'):
+                        wc_r0 = wc_r.json()['results'][0]
+                        wc_lat, wc_lon = wc_r0['latitude'], wc_r0['longitude']
+                        wc_city = wc_r0.get('name', wc_city)
+                except Exception as e:
+                    print(f"[Webcam geocode] {e}")
+                # Dynamic YouTube search for latest working stream
+                wc_video_id = None
+                try:
+                    import urllib.parse as _up
+                    for q in [f'{wc_city} webcam diretta 4K', f'{wc_city} live webcam 4K', f'live webcam {wc_city}']:
+                        yt_r = _req.get(
+                            f'https://www.youtube.com/results?search_query={_up.quote(q)}',
+                            timeout=8, headers={'User-Agent': 'Mozilla/5.0'}
+                        )
+                        import re as _re
+                        ids = _re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', yt_r.text)
+                        if ids:
+                            wc_video_id = ids[0]
+                            print(f"[Webcam] YouTube found: {wc_video_id} for {wc_city} (query: {q})")
+                            break
+                except Exception as e2:
+                    print(f"[Webcam yt search] {e2}")
+                wc_data = {"city": wc_city, "lat": wc_lat, "lon": wc_lon, "video_id": wc_video_id}
+                actions_done.append(f'WEBCAM:{json.dumps(wc_data, ensure_ascii=False)}')
+                speech = f"Apertura webcam per {wc_city}."
+                actions_done.append(f'SPEECH:{speech}')
+                actions_done.append(f'webcam {wc_city}: {speech}')
 
         # notizie senza "apri"
         if not actions_done and any(w in lower for w in ['ultime notizie', 'news di oggi', 'notizie oggi', 'cosa succede nel mondo']):
