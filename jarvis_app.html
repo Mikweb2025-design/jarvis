@@ -369,8 +369,8 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 #holo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:3;opacity:0}
 #avatar-widget.speaking #holo-video{opacity:0.85;transition:opacity 0.6s}
 #widget-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none;opacity:1;transition:opacity 0.6s}
-#avatar-img{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:2}
-#avatar-widget.speaking #avatar-img{display:none}
+#avatar-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:2}
+#avatar-widget.speaking #avatar-video{display:none}
 #avatar-widget.video-active #widget-canvas{opacity:0}
 #avatar-widget.video-active #holo-video{opacity:1}
 #avatar-widget.speaking{width:620px;height:620px;border-radius:16px;
@@ -685,7 +685,7 @@ html.theme-crystal #holo-canvas{opacity:0.55}
     <!-- Avatar widget flottante (sopra chat) -->
     <div id="avatar-widget">
       <canvas id="widget-canvas"></canvas>
-      <img id="avatar-img" src="/holographic_avatar.png" alt="avatar">
+      <video id="avatar-video" muted playsinline loop></video>
       <video id="holo-video" muted playsinline></video>
     </div>
 
@@ -1703,6 +1703,12 @@ window.addEventListener('DOMContentLoaded',function(){
   tick();loadWeather();setInterval(loadWeather,300000);loadSysInfo();
   initHoloCanvas();
   initWidgetCanvas();
+  // Avvia video animato idle
+  var av=document.getElementById('avatar-video');
+  if(av){
+    var vidSrc='/holographic_avatar_animated.mp4?v='+Date.now();
+    av.src=vidSrc;av.play().catch(function(){});
+  }
 });
 </script>
 </body>
