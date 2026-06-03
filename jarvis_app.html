@@ -352,6 +352,25 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 #holo-status.thinking{color:var(--am);text-shadow:0 0 10px var(--amg),0 0 30px rgba(255,170,0,0.2)}
 #holo-status.speaking{color:var(--cy);text-shadow:0 0 10px var(--cyg),0 0 40px var(--cyg)}
 
+/* ── AVATAR WIDGET FLOTTANTE ── */
+#avatar-widget{position:absolute;z-index:20;width:420px;height:420px;
+  border:1px solid rgba(0,240,255,0.2);border-radius:10px;overflow:hidden;
+  background:rgba(10,10,15,0.85);backdrop-filter:blur(8px);
+  box-shadow:0 0 40px rgba(0,240,255,0.12),inset 0 0 50px rgba(0,240,255,0.03);
+  pointer-events:none;
+  left:50%;top:50%;transform:translate(-50%,-50%);right:auto;bottom:auto;
+  transition:all 1.2s cubic-bezier(0.34,1.56,0.64,1)}
+#avatar-widget::before{content:'HOLO.LINK';position:absolute;top:2px;left:6px;z-index:5;
+  font-family:var(--fm);font-size:7px;color:var(--tx4);letter-spacing:0.2em;
+  text-shadow:0 0 4px rgba(0,0,0,0.8)}
+#avatar-widget::after{content:'';position:absolute;inset:0;z-index:1;
+  box-shadow:inset 0 0 40px rgba(0,240,255,0.04),inset 0 0 4px rgba(0,240,255,0.06);
+  pointer-events:none}
+#holo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:2;opacity:0.85}
+#avatar-widget.speaking #holo-video{opacity:1}
+#avatar-widget.speaking{width:620px;height:620px;border-radius:16px;
+  box-shadow:0 0 100px rgba(0,240,255,0.3),inset 0 0 160px rgba(0,240,255,0.08)}
+
 /* ── CHAT ── */
 #chat-overlay{position:absolute;bottom:0;left:0;right:0;z-index:5;
   background:linear-gradient(transparent 0%,rgba(10,10,15,0.95) 12%,rgba(10,10,15,0.99) 100%)}
@@ -658,6 +677,14 @@ html.theme-crystal #holo-canvas{opacity:0.55}
       <div id="holo-status" class="idle">◆ SYSTEM STANDBY ◆</div>
     </div>
 
+    <!-- Avatar widget flottante (sopra chat) -->
+    <div id="avatar-widget">
+      <video id="holo-video" muted playsinline></video>
+    </div>
+
+    <div id="mouth-debug" style="display:none"></div>
+    <button onclick="testMouth()" style="display:none">TEST BOCCA</button>
+
     <!-- Chat -->
     <div id="chat-overlay">
       <div id="chat-header">
@@ -905,16 +932,21 @@ function selectVoice(el){
 // ── HOLOGRAM CANVAS ENGINE ──
 var holoCanvas=null,holoCtx=null,holoAnimId=null;
 var holoParticles=[],holoMouthOpen=0,holoEyeScan=0;
+var mouthAnim=null;
+var testFrame=0;
 var holoThemeColors={cyberpunk:{c1:'#00f0ff',c2:'#ff00aa',c3:'#aa00ff'},holo:{c1:'#4ad8ff',c2:'#7ec8ff',c3:'#3aa0ff'},sunset:{c1:'#ff8800',c2:'#ff2255',c3:'#ff6600'},matrix:{c1:'#00ff41',c2:'#33ff77',c3:'#00ff88'},crystal:{c1:'#88ddff',c2:'#ff88cc',c3:'#c888ff'}};
 
 function initHoloCanvas(){
-  var c=document.getElementById('holo-canvas');
-  if(!c||!c.parentElement)return;
-  holoCanvas=c;holoCtx=c.getContext('2d');
-  resizeHoloCanvas();
-  window.addEventListener('resize',resizeHoloCanvas);
-  initHoloParticles();
-  holoAnimId=requestAnimationFrame(renderHolo);
+  try{
+    var c=document.getElementById('holo-canvas');
+    if(!c||!c.parentElement){document.getElementById('mouth-debug').textContent='ERR: no canvas';return}
+    holoCanvas=c;holoCtx=c.getContext('2d');
+    if(!holoCtx){document.getElementById('mouth-debug').textContent='ERR: no context';return}
+    resizeHoloCanvas();
+    window.addEventListener('resize',resizeHoloCanvas);
+    holoAnimId=requestAnimationFrame(renderHolo);
+    document.getElementById('mouth-debug').textContent='started';
+  }catch(e){document.getElementById('mouth-debug').textContent='init ERR:'+e.message}
 }
 
 function resizeHoloCanvas(){
@@ -952,208 +984,6 @@ function bezierCurve(x0,y0,x1,y1,x2,y2,seg){
     pts.push({x:x,y:y});
   }
   return pts;
-}
-
-function drawHoloFace(ctx,w,h,time,color1,color2){
-  var fw=Math.min(w,h)*0.36;
-  var cx=w/2,cy=h/2;
-  var mouthAmp=1+holoMouthOpen*3;
-
-  // ── Glow aura ──
-  ctx.globalAlpha=0.05;
-  ctx.fillStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=50;
-  ctx.beginPath();ctx.arc(cx,cy,fw*0.8,0,Math.PI*2);ctx.fill();
-  ctx.shadowBlur=0;
-
-  // ── Angular head shape (helmet silhouette) ──
-  ctx.strokeStyle=color1;ctx.lineWidth=1.2;ctx.globalAlpha=0.3;
-  ctx.shadowColor=color1;ctx.shadowBlur=12;
-  ctx.beginPath();
-  var pts=[
-    [cx-fw*1.0,cy-fw*0.6],[cx-fw*0.8,cy-fw*1.0],[cx-fw*0.4,cy-fw*1.15],[cx,cy-fw*1.2],[cx+fw*0.4,cy-fw*1.15],[cx+fw*0.8,cy-fw*1.0],[cx+fw*1.0,cy-fw*0.6],
-    [cx+fw*1.0,cy+fw*0.2],[cx+fw*0.9,cy+fw*0.5],[cx+fw*0.7,cy+fw*0.8],[cx+fw*0.3,cy+fw*1.0],[cx,cy+fw*1.05],[cx-fw*0.3,cy+fw*1.0],[cx-fw*0.7,cy+fw*0.8],[cx-fw*0.9,cy+fw*0.5],[cx-fw*1.0,cy+fw*0.2]
-  ];
-  pts.forEach(function(p,i){i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1])});
-  ctx.closePath();ctx.stroke();
-  ctx.shadowBlur=0;
-
-  // ── Inner helmet border ──
-  ctx.strokeStyle=color1;ctx.lineWidth=0.5;ctx.globalAlpha=0.12;
-  ctx.shadowColor=color1;ctx.shadowBlur=5;
-  ctx.beginPath();
-  pts.forEach(function(p,i){
-    var nx=cx+(p[0]-cx)*0.94,ny=cy+(p[1]-cy)*0.94;
-    i===0?ctx.moveTo(nx,ny):ctx.lineTo(nx,ny);
-  });
-  ctx.closePath();ctx.stroke();
-  ctx.shadowBlur=0;
-
-  // ── Tech grid inside head ──
-  ctx.globalAlpha=0.06;
-  for(var i=0;i<8;i++){
-    var y=cy-fw*0.9+fw*0.25*i;
-    ctx.strokeStyle=color1;ctx.lineWidth=0.3;
-    ctx.beginPath();ctx.moveTo(cx-fw*0.85,y);ctx.lineTo(cx+fw*0.85,y);ctx.stroke();
-  }
-  for(var i=0;i<6;i++){
-    var x=cx-fw*0.8+fw*0.3*i;
-    ctx.beginPath();ctx.moveTo(x,cy-fw*0.9);ctx.lineTo(x,cy+fw*0.9);ctx.stroke();
-  }
-  ctx.globalAlpha=1;
-
-  // ── Scanline ──
-  var scanY=cy-fw*0.9+((time*0.00015)%1)*fw*1.8;
-  ctx.strokeStyle=color1;ctx.globalAlpha=0.08;ctx.lineWidth=0.8;
-  ctx.shadowColor=color1;ctx.shadowBlur=8;
-  ctx.beginPath();ctx.moveTo(cx-fw*0.95,scanY);ctx.lineTo(cx+fw*0.95,scanY);ctx.stroke();
-  ctx.shadowBlur=0;
-
-  // ── Glitch bars ──
-  if(Math.sin(time*0.0025)>0.93){
-    var gY=cy-fw*0.9+Math.random()*fw*1.8;
-    ctx.fillStyle=color1;ctx.globalAlpha=0.05;
-    ctx.fillRect(cx-fw*0.85,gY,fw*1.7,1+Math.random()*3);
-    ctx.globalAlpha=1;
-  }
-
-  // ── Visor/Eyes: central glowing band ──
-  var visorY=cy-fw*0.15, visorW=fw*0.55, visorH=fw*0.16;
-  var visorPulse=0.8+0.2*Math.sin(time*0.001);
-  // Outer visor frame
-  ctx.strokeStyle=color1;ctx.lineWidth=1.5;ctx.globalAlpha=0.3*visorPulse;
-  ctx.shadowColor=color1;ctx.shadowBlur=15;
-  ctx.beginPath();ctx.ellipse(cx,visorY,visorW,visorH,0,0,Math.PI*2);ctx.stroke();
-  ctx.lineWidth=0.5;ctx.globalAlpha=0.12;
-  ctx.beginPath();ctx.ellipse(cx,visorY,visorW*1.05,visorH*1.15,0,0,Math.PI*2);ctx.stroke();
-
-  // Visor inner glow
-  ctx.fillStyle=color1;ctx.globalAlpha=0.04*visorPulse;ctx.shadowColor=color1;ctx.shadowBlur=30;
-  ctx.beginPath();ctx.ellipse(cx,visorY,visorW*0.9,visorH*0.8,0,0,Math.PI*2);ctx.fill();
-  ctx.shadowBlur=0;
-
-  // Two illuminated eyes inside visor
-  var eyeSpacing=fw*0.18,eyeSize=fw*0.12;
-  [-1,1].forEach(function(side){
-    var ex=cx+side*eyeSpacing,ey=visorY;
-    // Outer orbit
-    ctx.strokeStyle=color1;ctx.globalAlpha=0.15*visorPulse;ctx.lineWidth=0.6;
-    ctx.shadowColor=color1;ctx.shadowBlur=8;
-    ctx.beginPath();ctx.arc(ex,ey,eyeSize*1.1,0,Math.PI*2);ctx.stroke();
-
-    // Eye circle
-    ctx.strokeStyle=color1;ctx.globalAlpha=0.5*visorPulse;ctx.lineWidth=1.2;
-    ctx.shadowColor=color1;ctx.shadowBlur=12;
-    ctx.beginPath();ctx.arc(ex,ey,eyeSize,0,Math.PI*2);ctx.stroke();
-
-    // Iris
-    var irisSize=eyeSize*0.45;
-    ctx.fillStyle=color1;ctx.globalAlpha=0.2*visorPulse;ctx.shadowColor=color1;ctx.shadowBlur=18;
-    ctx.beginPath();ctx.arc(ex,ey,irisSize,0,Math.PI*2);ctx.fill();
-
-    // Scanning pupil
-    var pupilOff=holoEyeScan*eyeSize*0.4+Math.sin(time*0.003+side)*eyeSize*0.12;
-    ctx.fillStyle=color1;ctx.globalAlpha=0.7*visorPulse;ctx.shadowColor=color1;ctx.shadowBlur=15;
-    ctx.beginPath();ctx.arc(ex+pupilOff,ey+Math.cos(time*0.004+side*2)*eyeSize*0.1,eyeSize*0.14,0,Math.PI*2);ctx.fill();
-    ctx.shadowBlur=0;
-
-    // Crosshair lines in eye
-    ctx.strokeStyle=color1;ctx.globalAlpha=0.08*visorPulse;ctx.lineWidth=0.3;
-    ctx.beginPath();ctx.moveTo(ex-eyeSize*0.6,ey);ctx.lineTo(ex+eyeSize*0.6,ey);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(ex,ey-eyeSize*0.6);ctx.lineTo(ex,ey+eyeSize*0.6);ctx.stroke();
-  });
-
-  // ── Mouth / speaker grille ──
-  var mouthY=cy+fw*0.45, mouthW=fw*0.3, mouthH=fw*0.04*mouthAmp;
-  // Grille lines (horizontal segments)
-  ctx.strokeStyle=color2;ctx.globalAlpha=0.4;ctx.lineWidth=0.8;
-  ctx.shadowColor=color2;ctx.shadowBlur=8;
-  for(var i=0;i<5;i++){
-    var rowY=mouthY-i*fw*0.04+fw*0.08;
-    var rowW=mouthW*(1-i*0.15);
-    var open=1+holoMouthOpen*Math.sin(time*0.008+i*2)*0.5;
-    var gaps=1+holoMouthOpen*2;
-    ctx.globalAlpha=(0.2+0.2*holoMouthOpen)*(1-i*0.1);
-    for(var g=0;g<gaps;g++){
-      var gx=cx-rowW+g*(rowW*2/(gaps+1));
-      ctx.beginPath();ctx.moveTo(gx,rowY);ctx.lineTo(gx+rowW*0.6/(gaps+1),rowY);ctx.stroke();
-    }
-  }
-
-  // Speaker arch
-  ctx.strokeStyle=color2;ctx.globalAlpha=0.25;ctx.lineWidth=1;
-  ctx.beginPath();
-  ctx.moveTo(cx-mouthW, mouthY+fw*0.04);
-  ctx.quadraticCurveTo(cx, mouthY+fw*0.02+fw*0.06*holoMouthOpen, cx+mouthW, mouthY+fw*0.04);
-  ctx.stroke();
-
-  // Sound wave arcs
-  if(holoMouthOpen>0.1){
-    ctx.strokeStyle=color2;ctx.globalAlpha=0.06*holoMouthOpen;ctx.lineWidth=0.5;
-    [1,2,3].forEach(function(r){
-      ctx.beginPath();ctx.arc(cx,cy+fw*0.45,fw*0.02*r,0.3,Math.PI-0.3);ctx.stroke();
-    });
-  }
-  ctx.shadowBlur=0;
-
-  // ── Circuit lines on sides ──
-  ctx.strokeStyle=color1;ctx.globalAlpha=0.08;ctx.lineWidth=0.4;
-  ctx.shadowColor=color1;ctx.shadowBlur=3;
-  [-1,1].forEach(function(s){
-    var bx=cx+s*fw*0.75;
-    ctx.beginPath();
-    ctx.moveTo(bx,cy-fw*0.3);
-    ctx.lineTo(bx+s*fw*0.1,cy-fw*0.15);
-    ctx.lineTo(bx,cy);
-    ctx.lineTo(bx+s*fw*0.08,cy+fw*0.15);
-    ctx.lineTo(bx,cy+fw*0.3);
-    ctx.stroke();
-
-    // Side nodes
-    [cy-fw*0.3,cy,cy+fw*0.3].forEach(function(yy){
-      ctx.fillStyle=color1;ctx.globalAlpha=0.1;
-      ctx.beginPath();ctx.arc(bx+s*fw*0.05*((yy-cy)/fw*0.5+0.5),yy,1.5,0,Math.PI*2);ctx.fill();
-    });
-  });
-  ctx.shadowBlur=0;
-
-  // ── Crown / top antenna array ──
-  ctx.strokeStyle=color1;ctx.globalAlpha=0.08;ctx.lineWidth=0.4;
-  ctx.shadowColor=color1;ctx.shadowBlur=4;
-  for(var i=0;i<5;i++){
-    var ax=cx-fw*0.4+fw*0.2*i;
-    var ah=fw*0.2+fw*0.08*Math.sin(time*0.002+i*2);
-    ctx.beginPath();ctx.moveTo(ax,cy-fw*1.05);ctx.lineTo(ax-ah*0.15,cy-fw*1.05-ah);ctx.stroke();
-    ctx.fillStyle=color1;ctx.globalAlpha=0.06+0.04*Math.sin(time*0.003+i*3);
-    ctx.beginPath();ctx.arc(ax-ah*0.15,cy-fw*1.05-ah,1.5,0,Math.PI*2);ctx.fill();
-  }
-  ctx.shadowBlur=0;
-
-  // ── Orbiting data nodes around head ──
-  for(var i=0;i<6;i++){
-    var theta=Math.PI*2*i/6+time*0.0003;
-    var rd=fw*0.7+fw*0.08*Math.sin(time*0.0015+i);
-    var dx=cx+rd*Math.cos(theta),dy=cy+rd*Math.sin(theta)*1.05;
-    var ds=1.5+Math.sin(time*0.002+i*2)*0.8;
-    ctx.fillStyle=color2;ctx.globalAlpha=0.08+0.06*Math.sin(time*0.002+i*3);
-    ctx.shadowColor=color2;ctx.shadowBlur=6;
-    ctx.beginPath();ctx.arc(dx,dy,ds,0,Math.PI*2);ctx.fill();
-  }
-  ctx.shadowBlur=0;
-  ctx.globalAlpha=1;
-
-  // ── Helmet edge glow dots ──
-  for(var i=0;i<24;i++){
-    var a=Math.PI*2*i/24;
-    var rx=fw*0.97,rx2=fw*0.92;
-    var edgeY=function(ang){return cy+fw*(0.65*Math.sin(ang)+0.35*Math.sin(ang*3)*0.15)};
-    var nx=cx+rx*Math.cos(a),ny=edgeY(a);
-    var s=1.2+Math.sin(time*0.0015+i*1.3)*0.6;
-    ctx.fillStyle=color1;ctx.globalAlpha=0.1+0.06*Math.sin(time*0.002+i*0.5);
-    ctx.shadowColor=color1;ctx.shadowBlur=4;
-    ctx.beginPath();ctx.arc(nx,ny,s,0,Math.PI*2);ctx.fill();
-  }
-  ctx.shadowBlur=0;
-  ctx.globalAlpha=1;
 }
 
 function drawNetworkParticles(ctx,particles,w,h,time,color1,color2){
@@ -1229,32 +1059,19 @@ function drawPulseRing(ctx,cx,cy,radius,time,color){
 }
 
 function renderHolo(time){
-  if(!holoCtx||!holoCanvas)return;
-  var ctx=holoCtx,w=holoCanvas.width,h=holoCanvas.height;
-  ctx.clearRect(0,0,w,h);
+  try{
+    if(!holoCtx||!holoCanvas)return;
+    var ctx=holoCtx,w=holoCanvas.width,h=holoCanvas.height;
+    ctx.clearRect(0,0,w,h);
+    var cx=w/2,cy=h/2;
+    var color1=getThemeColor(0),color2=getThemeColor(1);
 
-  var color1=getThemeColor(0),color2=getThemeColor(1),color3=getThemeColor(2);
-
-  // Data streams (background)
-  drawDataStreams(ctx,w,h,time,color1);
-
-  // Outer rings
-  drawPulseRing(ctx,w/2,h/2,Math.min(w,h)*0.32,time,color1);
-  drawPulseRing(ctx,w/2,h/2,Math.min(w,h)*0.28,time,color3);
-  drawPulseRing(ctx,w/2,h/2,Math.min(w,h)*0.24,time,color2);
-
-  // Holographic AI face
-  drawHoloFace(ctx,w,h,time,color1,color2);
-
-  // Network particles (background)
-  drawNetworkParticles(ctx,holoParticles,w,h,time,color1,color2);
-
-  // Central glow behind face
-  var pulse=Math.sin(time*0.0015)*0.3+0.5;
-  ctx.globalAlpha=0.04*pulse;
-  ctx.fillStyle=color1;ctx.shadowColor=color1;ctx.shadowBlur=40;
-  ctx.beginPath();ctx.arc(w/2,h/2,Math.min(w,h)*0.06,0,Math.PI*2);ctx.fill();
-  ctx.shadowBlur=0;ctx.globalAlpha=1;
+    // Scanline
+    ctx.globalAlpha=0.06;
+    ctx.strokeStyle=color1;ctx.lineWidth=0.5;
+    ctx.beginPath();ctx.moveTo(0,((time*0.00012)%1)*h);ctx.lineTo(w,((time*0.00012)%1)*h);ctx.stroke();
+    ctx.globalAlpha=1;
+  }catch(e){console.error('renderHolo:',e)}
 
   holoAnimId=requestAnimationFrame(renderHolo);
 }
@@ -1308,26 +1125,71 @@ function spawnParticles(theme){
 }
 
 // ── HOLO STATE ──
+var widgetFloatTimer=null;
 function setHoloState(state){
+  holoState=state;
   var reactor=document.getElementById('cyber-reactor');
   var core=reactor?reactor.querySelector('.reactor-core'):null;
   var status=document.getElementById('holo-status');
+  var wg=document.getElementById('avatar-widget');
   if(state==='thinking'){
     if(reactor)reactor.style.opacity='0.6';
     if(core){core.style.background='var(--am)';core.style.boxShadow='0 0 20px var(--amg),0 0 60px rgba(255,170,0,0.4)'}
     if(status){status.textContent='◉ PROCESSING...';status.className='thinking'}
+    if(wg){wg.style.borderColor='rgba(255,170,0,0.3)';wg.style.boxShadow='0 0 20px rgba(255,170,0,0.12),inset 0 0 30px rgba(255,170,0,0.03)'}
     holoMouthOpen=0.2;holoEyeScan=0.6;
   }else if(state==='speaking'){
     if(reactor)reactor.style.opacity='0.5';
     if(core){core.style.background='var(--cy)';core.style.boxShadow='0 0 20px var(--cyg),0 0 60px rgba(0,240,255,0.4)'}
     if(status){status.textContent='◉ SPEAKING...';status.className='speaking'}
+    if(wg){wg.style.borderColor='rgba(0,240,255,0.4)';wg.style.boxShadow='0 0 30px rgba(0,240,255,0.15),inset 0 0 40px rgba(0,240,255,0.04)'}
     holoMouthOpen=1;holoEyeScan=0.3;
+    if(!mouthAnim){var t=0;mouthAnim=setInterval(function(){t+=0.15;holoMouthOpen=0.3+0.7*(0.5+0.5*Math.sin(t))},50)}
+    // Widget fluttuante durante speaking
+    if(wg&&!widgetFloatTimer){
+      widgetFloat(wg);
+    }
   }else{
     if(reactor)reactor.style.opacity='var(--reactor-bg,0.35)';
     if(core){core.style.background='var(--cy)';core.style.boxShadow='0 0 20px var(--cyg),0 0 60px rgba(0,240,255,0.2)'}
     if(status){status.textContent='◆ SYSTEM STANDBY ◆';status.className='idle'}
+    if(wg){wg.style.borderColor='rgba(0,240,255,0.2)';wg.style.boxShadow='0 0 20px rgba(0,240,255,0.08),inset 0 0 30px rgba(0,240,255,0.02)';resetWidgetPos(wg)}
     holoMouthOpen=0;holoEyeScan=0;
+    if(mouthAnim){clearInterval(mouthAnim);mouthAnim=null}
+    if(widgetFloatTimer){clearInterval(widgetFloatTimer);widgetFloatTimer=null}
   }
+}
+
+function widgetFloat(wg){
+  var positions=[
+    function(){return{left:'50%',top:'30%',transform:'translate(-50%,-50%)',right:'auto',bottom:'auto'}},
+    function(){return{left:'12px',top:'12px',right:'auto',bottom:'auto',transform:'none'}},
+    function(){return{right:'12px',top:'50%',transform:'translateY(-50%)',left:'auto',bottom:'auto'}},
+    function(){return{left:'35%',top:'10px',right:'auto',bottom:'auto',transform:'none'}},
+    function(){return{right:'25%',top:'40%',transform:'translateY(-50%)',left:'auto',bottom:'auto'}},
+    function(){return{left:'12px',top:'55%',transform:'translateY(-50%)',right:'auto',bottom:'auto'}},
+    function(){return{left:'50%',top:'12px',transform:'translateX(-50%)',right:'auto',bottom:'auto'}},
+  ];
+  var i=0;
+  var p=positions[0]();
+  Object.assign(wg.style,p);
+  i=1;
+  widgetFloatTimer=setInterval(function(){
+    var p=positions[i%positions.length]();
+    Object.assign(wg.style,p);
+    i++;
+  },3500);
+}
+
+function resetWidgetPos(wg){
+  wg.style.left='50%';wg.style.top='50%';wg.style.right='auto';wg.style.bottom='auto';
+  wg.style.transform='translate(-50%,-50%)';
+}
+
+function testMouth(){
+  if(mouthAnim){clearInterval(mouthAnim);mouthAnim=null}
+  setHoloState('speaking');
+  setTimeout(function(){setHoloState('idle')},3000);
 }
 
 // ── CHAT ──
@@ -1517,6 +1379,26 @@ async function speak(text){
   if(!text||!srvOnline)return;
   var clean=text.replace(/\*\*(.+?)\*\*/g,'$1').replace(/\*(.+?)\*/g,'$1').replace(/<[^>]+>/g,'').replace(/#{1,6}\s*/g,'').replace(/`([^`]+)`/g,'$1').trim();
   if(!clean)return;
+  if(spkbar)spkbar.innerHTML='<div class="wave"><span></span><span></span><span></span><span></span><span></span></div> GENERATING VIDEO...';
+  // Show avatar widget in speaking mode
+  var wg=document.getElementById('avatar-widget'),vd=document.getElementById('holo-video');
+  if(wg)wg.classList.add('speaking');
+  try{
+    var r=await fetch(SRV+'/api/wav2lip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,voice:currentVoice,language:currentLang})});
+    if(r.ok){
+      var blob=await r.blob(),url=URL.createObjectURL(blob);
+      setHoloState('speaking');
+      if(vd){
+        vd.src=url;vd.muted=false;vd.play();
+        vd.onended=function(){vd.src='';URL.revokeObjectURL(url);if(wg)wg.classList.remove('speaking');setHoloState('idle')};
+      }
+      if(spkbar)spkbar.innerHTML='<div class="wave"><span></span><span></span><span></span><span></span><span></span></div> SPEAKING';
+      return;
+    } else {
+      if(wg)wg.classList.remove('speaking');
+    }
+  }catch(e){log('wav2lip: '+e.message);if(wg)wg.classList.remove('speaking')}
+  // Fallback: audio-only TTS
   if(spkbar)spkbar.innerHTML='<div class="wave"><span></span><span></span><span></span><span></span><span></span></div> SPEAKING';
   setHoloState('speaking');
   try{
