@@ -1268,13 +1268,19 @@ function drawNeuralAnim(ctx,w,h,cx,cy,t,color1,color2,intensity,state){
   ctx.globalAlpha=1;ctx.shadowBlur=0;
 
   // ── Status text ──
-  var label=state==='thinking'?'◉ NEURAL BOOT':'◉ SYNAPSE LIVE';
-  var pulseAlpha=0.2+0.15*Math.sin(t*2*speedMul);
-  ctx.fillStyle=color1;ctx.globalAlpha=pulseAlpha*intensity;
-  ctx.font=Math.min(w,h)*0.035+'px monospace';
-  ctx.textAlign='center';ctx.textBaseline='bottom';
-  ctx.shadowColor=color1;ctx.shadowBlur=6;
-  ctx.fillText(label,cx,h-Math.min(w,h)*0.08-4);
+  var lines=state==='thinking'
+    ?['⏳ UN ATTIMO...','ACCENDO I NEURONI']
+    :['⚡ ACCENDENDO SINAPSI','GENERAZIONE VIDEO...'];
+  var pulseAlpha=0.3+0.2*Math.sin(t*2*speedMul);
+  ctx.textAlign='center';
+  ctx.shadowColor=color1;ctx.shadowBlur=8;
+  lines.forEach(function(l,i){
+    ctx.fillStyle=color1;ctx.globalAlpha=pulseAlpha*(1-i*0.2);
+    ctx.font=Math.min(w,h)*(0.032-i*0.005)+'px monospace';
+    ctx.textBaseline=i===0?'bottom':'top';
+    var yOff=i===0?-6-Math.min(w,h)*0.02:4+Math.min(w,h)*0.02;
+    ctx.fillText(l,cx,cy+Math.min(w,h)*0.38+yOff);
+  });
   ctx.globalAlpha=1;ctx.shadowBlur=0;
 }
 
