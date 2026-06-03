@@ -1084,6 +1084,7 @@ function renderHolo(time){
 var widgetCanvas=null,widgetCtx=null,widgetAnimId=null;
 var widgetParts=[],widgetTime=0;
 var widgetVideoActive=false;
+var widgetSpikes=[]; // neural spike train
 
 function initWidgetCanvas(){
   var c=document.getElementById('widget-canvas');
@@ -1092,13 +1093,15 @@ function initWidgetCanvas(){
   resizeWidgetCanvas();
   window.addEventListener('resize',resizeWidgetCanvas);
   widgetParts=[];
-  for(var i=0;i<40;i++){
+  for(var i=0;i<50;i++){
     widgetParts.push({
       x:Math.random(),y:Math.random(),
       vx:(Math.random()-0.5)*0.002,vy:(Math.random()-0.5)*0.002,
       size:1+Math.random()*2.5,
       phase:Math.random()*Math.PI*2,
-      speed:0.3+Math.random()*0.7
+      speed:0.3+Math.random()*0.7,
+      spike:0, // neural spike intensity 0-1
+      spikePhase:Math.random()*100
     });
   }
   widgetAnimId=requestAnimationFrame(renderWidget);
@@ -1119,8 +1122,17 @@ function renderWidget(time){
   var cx=w/2,cy=h/2;
   var color1=getThemeColor(0),color2=getThemeColor(1);
   var t=widgetTime*0.001;
-  var intensity=holoState==='speaking'?1:0.4;
-  var speedMul=holoState==='speaking'?1.8:1;
+  var isActive=holoState==='speaking'||holoState==='thinking';
+  var intensity=isActive?1:0.35;
+  var speedMul=isActive?1.8:1;
+
+  // ── Neural spike train ──
+  widgetParts.forEach(function(p){
+    p.spike*=0.92; // decay
+    if(isActive&&Math.random()<0.008*speedMul){
+      p.spike=0.8+Math.random()*0.2; // fire!
+    }
+  });
 
   // ── Pulsing rings ──
   for(var i=0;i<3;i++){
@@ -1139,7 +1151,7 @@ function renderWidget(time){
   ctx.beginPath();ctx.moveTo(cx-crossR,cy);ctx.lineTo(cx+crossR,cy);ctx.stroke();
   ctx.beginPath();ctx.moveTo(cx,cy-crossR);ctx.lineTo(cx,cy+crossR);ctx.stroke();
 
-  // ── Particles with connections ──
+  // ── Move particles ──
   widgetParts.forEach(function(p){
     p.x+=p.vx*speedMul+Math.sin(t*0.3*speedMul+p.phase)*0.0005;
     p.y+=p.vy*speedMul+Math.cos(t*0.4*speedMul+p.phase*1.3)*0.0005;
@@ -1147,24 +1159,40 @@ function renderWidget(time){
     if(p.y>1.1||p.y<-0.1){p.vy*=-1;p.y=Math.max(-0.1,Math.min(1.1,p.y))}
   });
 
-  var maxDist=holoState==='speaking'?0.28:0.2;
+  // ── Neural connections with firing pulses ──
+  var maxDist=isActive?0.3:0.2;
   for(var i=0;i<widgetParts.length;i++){
     for(var j=i+1;j<widgetParts.length;j++){
       var a=widgetParts[i],b=widgetParts[j];
       var dx=a.x-b.x,dy=a.y-b.y;
       var dist=Math.sqrt(dx*dx+dy*dy);
       if(dist<maxDist){
-        var alpha=(1-dist/maxDist)*0.12*intensity;
-        ctx.strokeStyle=color2;ctx.globalAlpha=alpha;ctx.lineWidth=0.3;
-        ctx.shadowBlur=0;
+        var distNorm=1-dist/maxDist;
+        var baseAlpha=distNorm*0.12*intensity;
+        // Firing pulse along connection
+        var fireAlpha=Math.max(a.spike,b.spike)*distNorm*0.4*speedMul;
+        var finalAlpha=Math.min(baseAlpha+fireAlpha,0.5);
+        ctx.strokeStyle=finalAlpha>0.2?color1:color2;
+        ctx.globalAlpha=finalAlpha;
+        ctx.lineWidth=finalAlpha>0.2?0.6:0.3;
+        ctx.shadowColor=finalAlpha>0.2&&isActive?color1:'transparent';
+        ctx.shadowBlur=finalAlpha>0.2?6:0;
         ctx.beginPath();ctx.moveTo(a.x*w,a.y*h);ctx.lineTo(b.x*w,b.y*h);ctx.stroke();
       }
     }
   }
 
+  // ── Draw particles with neural glow ──
   widgetParts.forEach(function(p){
     var sz=p.size*(0.8+0.2*Math.sin(t*speedMul+p.phase*2));
-    var alpha=(0.15+0.1*Math.sin(t*0.5*speedMul+p.phase))*intensity;
+    // Neural firing: bigger + brighter
+    if(p.spike>0.1){
+      var spikeSz=sz*(1+p.spike*3);
+      ctx.fillStyle=color1;ctx.globalAlpha=p.spike*0.6;
+      ctx.shadowColor=color1;ctx.shadowBlur=spikeSz*4;
+      ctx.beginPath();ctx.arc(p.x*w,p.y*h,spikeSz,0,Math.PI*2);ctx.fill();
+    }
+    var alpha=Math.max(0.15+0.1*Math.sin(t*0.5*speedMul+p.phase),p.spike*0.4)*intensity;
     ctx.fillStyle=color1;ctx.globalAlpha=alpha;
     ctx.shadowColor=color1;ctx.shadowBlur=4;
     ctx.beginPath();ctx.arc(p.x*w,p.y*h,sz,0,Math.PI*2);ctx.fill();
@@ -1188,6 +1216,17 @@ function renderWidget(time){
     ctx.lineTo(c[0],c[1]);ctx.lineTo(c[0],c[1]+c[3]*bracket);
     ctx.stroke();
   });
+
+  // ── Status text (boot/neural) ──
+  if(isActive){
+    var label=holoState==='thinking'?'◉ NEURAL BOOT':'◉ SYNAPSE LIVE';
+    var pulseAlpha=0.2+0.15*Math.sin(t*2*speedMul);
+    ctx.fillStyle=color1;ctx.globalAlpha=pulseAlpha*intensity;
+    ctx.font=Math.min(w,h)*0.035+'px monospace';
+    ctx.textAlign='center';ctx.textBaseline='bottom';
+    ctx.shadowColor=color1;ctx.shadowBlur=6;
+    ctx.fillText(label,cx,h-bracket-4);
+  }
 
   ctx.globalAlpha=1;ctx.shadowBlur=0;
   widgetAnimId=requestAnimationFrame(renderWidget);
