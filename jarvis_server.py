@@ -344,11 +344,28 @@ class H(BaseHTTPRequestHandler):
                     self.send_header("Content-Type","text/html; charset=utf-8")
                     self.send_header("Content-Length", str(len(b)))
                     self.send_header("Connection", "close")
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    self.send_header("Pragma", "no-cache")
+                    self.send_header("Expires", "0")
                     self._cors()
                     self.end_headers()
                     self.wfile.write(b)
                 else:
                     self._json(404,{"error":"jarvis_app.html non trovato"})
+
+            elif self.path.startswith("/holographic_avatar.png"):
+                p = Path(__file__).parent / "holographic_avatar.png"
+                if p.exists():
+                    b = p.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/png")
+                    self.send_header("Content-Length", str(len(b)))
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(b)
+                else:
+                    self._json(404, {"error": "avatar not found"})
 
             elif self.path=="/api/status":
                 self._json(200,{"status":"online","model":cfg["groq"]["model"],
@@ -706,6 +723,38 @@ class H(BaseHTTPRequestHandler):
                 self._cors(); self.end_headers(); self.wfile.write(data)
                 print(f"  [TTS] Generato in {time.time()-t0:.2f}s ({len(data)} bytes)")
 
+            elif self.path=="/api/wav2lip":
+                text  = body.get("text","")
+                voice = body.get("voice", cfg["tts"].get("qwen3_voice", "vivian"))
+                language = body.get("language", "italian")
+                if not text: self._json(400,{"error":"Testo vuoto"}); return
+
+                t0 = time.time()
+                tts_data, _ = _generate_tts_chunk(text, voice=voice, language=language, speed=1.0)
+                if tts_data is None:
+                    self._json(500,{"error":"TTS fallito"}); return
+
+                audio_path = "/tmp/wav2lip_input.wav"
+                with open(audio_path, "wb") as f: f.write(tts_data)
+
+                out_path = f"/tmp/wav2lip_{int(time.time())}.mp4"
+                try:
+                    from wav2lip_run import run as wav2lip_run
+                    face_path = os.path.join(os.path.dirname(__file__), "holographic_avatar.png")
+                    wav2lip_run(face_path, audio_path, out_path, fps=20)
+                except Exception as e:
+                    self._json(500,{"error":f"Wav2Lip: {e}"}); return
+
+                with open(out_path, "rb") as f: video_data = f.read()
+                os.unlink(out_path)
+                os.unlink(audio_path)
+                self.send_response(200)
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Length", str(len(video_data)))
+                self.send_header("Connection", "close")
+                self._cors(); self.end_headers(); self.wfile.write(video_data)
+                print(f"  [Wav2Lip] video in {time.time()-t0:.2f}s ({len(video_data)} bytes)")
+
             elif self.path=="/api/config/update":
                 with state_lock:
                     for k,v in body.items():
@@ -908,6 +957,17 @@ if __name__=="__main__":
     print("─"*52)
     print()
     sys.stdout.flush()
+    # Precarica Wav2Lip (modello + face detection)
+    try:
+        from wav2lip_run import prepare_face
+        face_path = os.path.join(os.path.dirname(__file__), "holographic_avatar.png")
+        if os.path.exists(face_path):
+            prepare_face(face_path)
+            print(f"  Wav2Lip → Modello e face pre-caricati")
+        else:
+            print(f"  Wav2Lip → avatar non trovato, skip preload")
+    except Exception as e:
+        print(f"  Wav2Lip → preload skipped: {e}")
     try:
         server = ThreadedHTTPServer(("127.0.0.1",PORT), H)
         server.allow_reuse_address = True

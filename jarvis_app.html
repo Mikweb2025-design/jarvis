@@ -366,8 +366,11 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 #avatar-widget::after{content:'';position:absolute;inset:0;z-index:1;
   box-shadow:inset 0 0 40px rgba(0,240,255,0.04),inset 0 0 4px rgba(0,240,255,0.06);
   pointer-events:none}
-#holo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:2;opacity:0.85}
-#avatar-widget.speaking #holo-video{opacity:1}
+#holo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:3;opacity:0}
+#avatar-widget.speaking #holo-video{opacity:0.85;transition:opacity 0.6s}
+#widget-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none;opacity:1;transition:opacity 0.6s}
+#avatar-widget.video-active #widget-canvas{opacity:0}
+#avatar-widget.video-active #holo-video{opacity:1}
 #avatar-widget.speaking{width:620px;height:620px;border-radius:16px;
   box-shadow:0 0 100px rgba(0,240,255,0.3),inset 0 0 160px rgba(0,240,255,0.08)}
 
@@ -679,6 +682,7 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 
     <!-- Avatar widget flottante (sopra chat) -->
     <div id="avatar-widget">
+      <canvas id="widget-canvas"></canvas>
       <video id="holo-video" muted playsinline></video>
     </div>
 
@@ -1076,6 +1080,129 @@ function renderHolo(time){
   holoAnimId=requestAnimationFrame(renderHolo);
 }
 
+// ── WIDGET CANVAS (ologramma loading) ──
+var widgetCanvas=null,widgetCtx=null,widgetAnimId=null;
+var widgetParts=[],widgetTime=0;
+var widgetVideoActive=false;
+
+function initWidgetCanvas(){
+  var c=document.getElementById('widget-canvas');
+  if(!c)return;
+  widgetCanvas=c;widgetCtx=c.getContext('2d');
+  resizeWidgetCanvas();
+  window.addEventListener('resize',resizeWidgetCanvas);
+  widgetParts=[];
+  for(var i=0;i<40;i++){
+    widgetParts.push({
+      x:Math.random(),y:Math.random(),
+      vx:(Math.random()-0.5)*0.002,vy:(Math.random()-0.5)*0.002,
+      size:1+Math.random()*2.5,
+      phase:Math.random()*Math.PI*2,
+      speed:0.3+Math.random()*0.7
+    });
+  }
+  widgetAnimId=requestAnimationFrame(renderWidget);
+}
+
+function resizeWidgetCanvas(){
+  if(!widgetCanvas)return;
+  var rect=widgetCanvas.parentElement.getBoundingClientRect();
+  widgetCanvas.width=rect.width||420;
+  widgetCanvas.height=rect.height||420;
+}
+
+function renderWidget(time){
+  if(!widgetCtx||!widgetCanvas){widgetAnimId=requestAnimationFrame(renderWidget);return}
+  widgetTime=time||performance.now();
+  var ctx=widgetCtx,w=widgetCanvas.width,h=widgetCanvas.height;
+  ctx.clearRect(0,0,w,h);
+  var cx=w/2,cy=h/2;
+  var color1=getThemeColor(0),color2=getThemeColor(1);
+  var t=widgetTime*0.001;
+  var intensity=holoState==='speaking'?1:0.4;
+  var speedMul=holoState==='speaking'?1.8:1;
+
+  // ── Pulsing rings ──
+  for(var i=0;i<3;i++){
+    var radius=Math.min(w,h)*(0.12+0.22*i+0.06*Math.sin(t*0.5*speedMul+i*2));
+    var alpha=(0.06+0.05*Math.sin(t*0.6*speedMul+i*1.5))*intensity;
+    ctx.strokeStyle=color1;ctx.globalAlpha=alpha;
+    ctx.lineWidth=0.5+0.3*Math.sin(t*0.8*speedMul+i);
+    ctx.shadowColor=color1;ctx.shadowBlur=8;
+    ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.stroke();
+  }
+
+  // ── Targeting cross ──
+  var crossR=Math.min(w,h)*0.06;
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.08*intensity;ctx.lineWidth=0.5;
+  ctx.shadowBlur=0;
+  ctx.beginPath();ctx.moveTo(cx-crossR,cy);ctx.lineTo(cx+crossR,cy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,cy-crossR);ctx.lineTo(cx,cy+crossR);ctx.stroke();
+
+  // ── Particles with connections ──
+  widgetParts.forEach(function(p){
+    p.x+=p.vx*speedMul+Math.sin(t*0.3*speedMul+p.phase)*0.0005;
+    p.y+=p.vy*speedMul+Math.cos(t*0.4*speedMul+p.phase*1.3)*0.0005;
+    if(p.x>1.1||p.x<-0.1){p.vx*=-1;p.x=Math.max(-0.1,Math.min(1.1,p.x))}
+    if(p.y>1.1||p.y<-0.1){p.vy*=-1;p.y=Math.max(-0.1,Math.min(1.1,p.y))}
+  });
+
+  var maxDist=holoState==='speaking'?0.28:0.2;
+  for(var i=0;i<widgetParts.length;i++){
+    for(var j=i+1;j<widgetParts.length;j++){
+      var a=widgetParts[i],b=widgetParts[j];
+      var dx=a.x-b.x,dy=a.y-b.y;
+      var dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<maxDist){
+        var alpha=(1-dist/maxDist)*0.12*intensity;
+        ctx.strokeStyle=color2;ctx.globalAlpha=alpha;ctx.lineWidth=0.3;
+        ctx.shadowBlur=0;
+        ctx.beginPath();ctx.moveTo(a.x*w,a.y*h);ctx.lineTo(b.x*w,b.y*h);ctx.stroke();
+      }
+    }
+  }
+
+  widgetParts.forEach(function(p){
+    var sz=p.size*(0.8+0.2*Math.sin(t*speedMul+p.phase*2));
+    var alpha=(0.15+0.1*Math.sin(t*0.5*speedMul+p.phase))*intensity;
+    ctx.fillStyle=color1;ctx.globalAlpha=alpha;
+    ctx.shadowColor=color1;ctx.shadowBlur=4;
+    ctx.beginPath();ctx.arc(p.x*w,p.y*h,sz,0,Math.PI*2);ctx.fill();
+  });
+  ctx.globalAlpha=1;ctx.shadowBlur=0;
+
+  // ── Scanning line ──
+  var scanY=((t*0.08*speedMul)%2)*h;
+  if(scanY>h)scanY=2*h-scanY;
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.04*intensity;ctx.lineWidth=0.5;
+  ctx.shadowColor=color1;ctx.shadowBlur=6;
+  ctx.beginPath();ctx.moveTo(0,scanY);ctx.lineTo(w,scanY);ctx.stroke();
+
+  // ── Corner brackets ──
+  var bracket=Math.min(w,h)*0.08;
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.12*intensity;ctx.lineWidth=0.5;
+  ctx.shadowBlur=0;
+  var corners=[[0,0,1,1],[w,0,-1,1],[0,h,1,-1],[w,h,-1,-1]];
+  corners.forEach(function(c){
+    ctx.beginPath();ctx.moveTo(c[0]+c[2]*bracket,c[1]);
+    ctx.lineTo(c[0],c[1]);ctx.lineTo(c[0],c[1]+c[3]*bracket);
+    ctx.stroke();
+  });
+
+  ctx.globalAlpha=1;ctx.shadowBlur=0;
+  widgetAnimId=requestAnimationFrame(renderWidget);
+}
+
+function toggleWidgetVideo(active){
+  var wg=document.getElementById('avatar-widget');
+  if(!wg)return;
+  if(active){
+    wg.classList.add('video-active');
+  }else{
+    wg.classList.remove('video-active');
+  }
+}
+
 // ── THEME SELECTOR ──
 function setHoloOverlay(){
   var o=document.getElementById('holo-overlay');
@@ -1390,7 +1517,8 @@ async function speak(text){
       setHoloState('speaking');
       if(vd){
         vd.src=url;vd.muted=false;vd.play();
-        vd.onended=function(){vd.src='';URL.revokeObjectURL(url);if(wg)wg.classList.remove('speaking');setHoloState('idle')};
+        toggleWidgetVideo(true);
+        vd.onended=function(){vd.src='';URL.revokeObjectURL(url);toggleWidgetVideo(false);if(wg)wg.classList.remove('speaking');setHoloState('idle')};
       }
       if(spkbar)spkbar.innerHTML='<div class="wave"><span></span><span></span><span></span><span></span><span></span></div> SPEAKING';
       return;
@@ -1532,6 +1660,7 @@ window.addEventListener('DOMContentLoaded',function(){
   setInterval(ping,30000);setInterval(tick,1000);setInterval(loadSysInfo,20000);
   tick();loadWeather();setInterval(loadWeather,300000);loadSysInfo();
   initHoloCanvas();
+  initWidgetCanvas();
 });
 </script>
 </body>
