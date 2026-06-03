@@ -368,9 +368,7 @@ html.theme-crystal #holo-canvas{opacity:0.55}
   pointer-events:none}
 #holo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:3;opacity:0}
 #avatar-widget.speaking #holo-video{opacity:0.85;transition:opacity 0.6s}
-#widget-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none;opacity:1;transition:opacity 0.6s}
-#avatar-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:2}
-#avatar-widget.speaking #avatar-video{display:none}
+#widget-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none;opacity:1;transition:opacity 0.6s}
 #avatar-widget.video-active #widget-canvas{opacity:0}
 #avatar-widget.video-active #holo-video{opacity:1}
 #avatar-widget.speaking{width:620px;height:620px;border-radius:16px;
@@ -685,7 +683,6 @@ html.theme-crystal #holo-canvas{opacity:0.55}
     <!-- Avatar widget flottante (sopra chat) -->
     <div id="avatar-widget">
       <canvas id="widget-canvas"></canvas>
-      <video id="avatar-video" muted playsinline loop></video>
       <video id="holo-video" muted playsinline></video>
     </div>
 
@@ -1087,7 +1084,7 @@ function renderHolo(time){
 var widgetCanvas=null,widgetCtx=null,widgetAnimId=null;
 var widgetParts=[],widgetTime=0;
 var widgetVideoActive=false;
-var widgetSpikes=[]; // neural spike train
+var widgetPhoto=null;
 
 function initWidgetCanvas(){
   var c=document.getElementById('widget-canvas');
@@ -1103,10 +1100,14 @@ function initWidgetCanvas(){
       size:1+Math.random()*2.5,
       phase:Math.random()*Math.PI*2,
       speed:0.3+Math.random()*0.7,
-      spike:0, // neural spike intensity 0-1
+      spike:0,
       spikePhase:Math.random()*100
     });
   }
+  // Carica foto per idle animation
+  widgetPhoto=new Image();
+  widgetPhoto.crossOrigin='anonymous';
+  widgetPhoto.src='/holographic_avatar.png?v='+Date.now();
   widgetAnimId=requestAnimationFrame(renderWidget);
 }
 
@@ -1127,14 +1128,81 @@ function renderWidget(time){
   var t=widgetTime*0.001;
   var isActive=holoState==='speaking'||holoState==='thinking';
   var intensity=isActive?1:0.35;
-  var speedMul=isActive?1.8:1;
+
+  if(!isActive){
+    // ── IDLE: photo breathing ──
+    drawIdlePhoto(ctx,w,h,cx,cy,t,color1);
+  }else{
+    // ── ACTIVE: neural animation ──
+    drawNeuralAnim(ctx,w,h,cx,cy,t,color1,color2,intensity,holoState);
+  }
+
+  // ── Scanning line (sempre) ──
+  var speedMul=isActive?1.8:0.6;
+  var scanY=((t*0.08*speedMul)%2)*h;
+  if(scanY>h)scanY=2*h-scanY;
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.03;ctx.lineWidth=0.5;
+  ctx.shadowColor=color1;ctx.shadowBlur=4;
+  ctx.beginPath();ctx.moveTo(0,scanY);ctx.lineTo(w,scanY);ctx.stroke();
+
+  // ── Corner brackets ──
+  var bracket=Math.min(w,h)*0.08;
+  ctx.strokeStyle=color1;ctx.globalAlpha=0.1;ctx.lineWidth=0.5;
+  ctx.shadowBlur=0;
+  var corners=[[0,0,1,1],[w,0,-1,1],[0,h,1,-1],[w,h,-1,-1]];
+  corners.forEach(function(c){
+    ctx.beginPath();ctx.moveTo(c[0]+c[2]*bracket,c[1]);
+    ctx.lineTo(c[0],c[1]);ctx.lineTo(c[0],c[1]+c[3]*bracket);
+    ctx.stroke();
+  });
+
+  ctx.globalAlpha=1;ctx.shadowBlur=0;
+  widgetAnimId=requestAnimationFrame(renderWidget);
+}
+
+function drawIdlePhoto(ctx,w,h,cx,cy,t,color){
+  if(!widgetPhoto||!widgetPhoto.complete||widgetPhoto.naturalWidth<1)return;
+  // Breathing: slow scale oscillation
+  var breathe=1+0.015*Math.sin(t*0.8);
+  // Soft glow pulse
+  var glow=0.04+0.02*Math.sin(t*0.6);
+  // Subtle drift
+  var dx=1.5*Math.sin(t*0.3);
+  var dy=1.5*Math.cos(t*0.25);
+
+  // Glow aura behind photo
+  ctx.fillStyle=color;ctx.globalAlpha=glow;
+  ctx.shadowColor=color;ctx.shadowBlur=30;
+  ctx.beginPath();ctx.arc(cx+dx,cy+dy,Math.min(w,h)*0.3,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+
+  // Photo with breathing scale
+  var iw=widgetPhoto.naturalWidth,ih=widgetPhoto.naturalHeight;
+  var ph=Math.min(w,h)*0.5*breathe;
+  var pw=ph*iw/ih;
+  if(pw>w*0.8){pw=w*0.8;ph=pw*ih/iw}
+  ctx.drawImage(widgetPhoto,cx-pw/2+dx,cy-ph/2+dy,pw,ph);
+
+  // Holographic tint overlay
+  ctx.fillStyle=color;ctx.globalAlpha=0.04;
+  ctx.fillRect(0,0,w,h);
+
+  // Subtle pulsing ring
+  ctx.strokeStyle=color;ctx.globalAlpha=0.04+0.02*Math.sin(t*0.5);
+  ctx.lineWidth=0.5;ctx.shadowColor=color;ctx.shadowBlur=6;
+  var ringR=Math.min(w,h)*0.32+3*Math.sin(t*0.4);
+  ctx.beginPath();ctx.arc(cx+dx,cy+dy,ringR,0,Math.PI*2);ctx.stroke();
+  ctx.shadowBlur=0;
+  ctx.globalAlpha=1;
+}
+
+function drawNeuralAnim(ctx,w,h,cx,cy,t,color1,color2,intensity,state){
+  var speedMul=state==='speaking'?2:1.5;
 
   // ── Neural spike train ──
   widgetParts.forEach(function(p){
-    p.spike*=0.92; // decay
-    if(isActive&&Math.random()<0.008*speedMul){
-      p.spike=0.8+Math.random()*0.2; // fire!
-    }
+    p.spike*=0.92;
+    if(Math.random()<0.008*speedMul)p.spike=0.8+Math.random()*0.2;
   });
 
   // ── Pulsing rings ──
@@ -1162,8 +1230,8 @@ function renderWidget(time){
     if(p.y>1.1||p.y<-0.1){p.vy*=-1;p.y=Math.max(-0.1,Math.min(1.1,p.y))}
   });
 
-  // ── Neural connections with firing pulses ──
-  var maxDist=isActive?0.3:0.2;
+  // ── Neural connections ──
+  var maxDist=0.3;
   for(var i=0;i<widgetParts.length;i++){
     for(var j=i+1;j<widgetParts.length;j++){
       var a=widgetParts[i],b=widgetParts[j];
@@ -1172,23 +1240,21 @@ function renderWidget(time){
       if(dist<maxDist){
         var distNorm=1-dist/maxDist;
         var baseAlpha=distNorm*0.12*intensity;
-        // Firing pulse along connection
         var fireAlpha=Math.max(a.spike,b.spike)*distNorm*0.4*speedMul;
         var finalAlpha=Math.min(baseAlpha+fireAlpha,0.5);
         ctx.strokeStyle=finalAlpha>0.2?color1:color2;
         ctx.globalAlpha=finalAlpha;
         ctx.lineWidth=finalAlpha>0.2?0.6:0.3;
-        ctx.shadowColor=finalAlpha>0.2&&isActive?color1:'transparent';
+        ctx.shadowColor=finalAlpha>0.2?color1:'transparent';
         ctx.shadowBlur=finalAlpha>0.2?6:0;
         ctx.beginPath();ctx.moveTo(a.x*w,a.y*h);ctx.lineTo(b.x*w,b.y*h);ctx.stroke();
       }
     }
   }
 
-  // ── Draw particles with neural glow ──
+  // ── Draw particles ──
   widgetParts.forEach(function(p){
     var sz=p.size*(0.8+0.2*Math.sin(t*speedMul+p.phase*2));
-    // Neural firing: bigger + brighter
     if(p.spike>0.1){
       var spikeSz=sz*(1+p.spike*3);
       ctx.fillStyle=color1;ctx.globalAlpha=p.spike*0.6;
@@ -1202,37 +1268,15 @@ function renderWidget(time){
   });
   ctx.globalAlpha=1;ctx.shadowBlur=0;
 
-  // ── Scanning line ──
-  var scanY=((t*0.08*speedMul)%2)*h;
-  if(scanY>h)scanY=2*h-scanY;
-  ctx.strokeStyle=color1;ctx.globalAlpha=0.04*intensity;ctx.lineWidth=0.5;
+  // ── Status text ──
+  var label=state==='thinking'?'◉ NEURAL BOOT':'◉ SYNAPSE LIVE';
+  var pulseAlpha=0.2+0.15*Math.sin(t*2*speedMul);
+  ctx.fillStyle=color1;ctx.globalAlpha=pulseAlpha*intensity;
+  ctx.font=Math.min(w,h)*0.035+'px monospace';
+  ctx.textAlign='center';ctx.textBaseline='bottom';
   ctx.shadowColor=color1;ctx.shadowBlur=6;
-  ctx.beginPath();ctx.moveTo(0,scanY);ctx.lineTo(w,scanY);ctx.stroke();
-
-  // ── Corner brackets ──
-  var bracket=Math.min(w,h)*0.08;
-  ctx.strokeStyle=color1;ctx.globalAlpha=0.12*intensity;ctx.lineWidth=0.5;
-  ctx.shadowBlur=0;
-  var corners=[[0,0,1,1],[w,0,-1,1],[0,h,1,-1],[w,h,-1,-1]];
-  corners.forEach(function(c){
-    ctx.beginPath();ctx.moveTo(c[0]+c[2]*bracket,c[1]);
-    ctx.lineTo(c[0],c[1]);ctx.lineTo(c[0],c[1]+c[3]*bracket);
-    ctx.stroke();
-  });
-
-  // ── Status text (boot/neural) ──
-  if(isActive){
-    var label=holoState==='thinking'?'◉ NEURAL BOOT':'◉ SYNAPSE LIVE';
-    var pulseAlpha=0.2+0.15*Math.sin(t*2*speedMul);
-    ctx.fillStyle=color1;ctx.globalAlpha=pulseAlpha*intensity;
-    ctx.font=Math.min(w,h)*0.035+'px monospace';
-    ctx.textAlign='center';ctx.textBaseline='bottom';
-    ctx.shadowColor=color1;ctx.shadowBlur=6;
-    ctx.fillText(label,cx,h-bracket-4);
-  }
-
+  ctx.fillText(label,cx,h-Math.min(w,h)*0.08-4);
   ctx.globalAlpha=1;ctx.shadowBlur=0;
-  widgetAnimId=requestAnimationFrame(renderWidget);
 }
 
 function toggleWidgetVideo(active){
@@ -1703,12 +1747,6 @@ window.addEventListener('DOMContentLoaded',function(){
   tick();loadWeather();setInterval(loadWeather,300000);loadSysInfo();
   initHoloCanvas();
   initWidgetCanvas();
-  // Avvia video animato idle
-  var av=document.getElementById('avatar-video');
-  if(av){
-    var vidSrc='/holographic_avatar_animated.mp4?v='+Date.now();
-    av.src=vidSrc;av.play().catch(function(){});
-  }
 });
 </script>
 </body>
