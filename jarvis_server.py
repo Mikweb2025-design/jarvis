@@ -381,6 +381,20 @@ class H(BaseHTTPRequestHandler):
                 else:
                     self._json(404, {"error": "animated avatar not found"})
 
+            elif self.path.startswith("/waiting_neurons.mp4"):
+                p = Path(__file__).parent / "waiting_neurons.mp4"
+                if p.exists():
+                    b = p.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "video/mp4")
+                    self.send_header("Content-Length", str(len(b)))
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(b)
+                else:
+                    self._json(404, {"error": "waiting video not found"})
+
             elif self.path=="/api/status":
                 self._json(200,{"status":"online","model":cfg["groq"]["model"],
                     "voice":cfg["tts"].get("qwen3_voice", cfg["tts"].get("voice", "vivian")),"version":"9.0",

@@ -366,9 +366,9 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 #avatar-widget::after{content:'';position:absolute;inset:0;z-index:1;
   box-shadow:inset 0 0 40px rgba(0,240,255,0.04),inset 0 0 4px rgba(0,240,255,0.06);
   pointer-events:none}
-#holo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:3;opacity:0}
-#avatar-widget.speaking #holo-video{opacity:0.85;transition:opacity 0.6s}
+#holo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:3;opacity:0;transition:opacity 0.5s}
 #widget-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none;opacity:1;transition:opacity 0.6s}
+#avatar-widget.waiting-video #holo-video{opacity:0.7}
 #avatar-widget.video-active #widget-canvas{opacity:0}
 #avatar-widget.video-active #holo-video{opacity:1}
 #avatar-widget.speaking{width:620px;height:620px;border-radius:16px;
@@ -683,7 +683,7 @@ html.theme-crystal #holo-canvas{opacity:0.55}
     <!-- Avatar widget flottante (sopra chat) -->
     <div id="avatar-widget">
       <canvas id="widget-canvas"></canvas>
-      <video id="holo-video" muted playsinline></video>
+      <video id="holo-video" playsinline></video>
     </div>
 
     <div id="mouth-debug" style="display:none"></div>
@@ -1344,6 +1344,19 @@ function spawnParticles(theme){
 
 // ── HOLO STATE ──
 var widgetFloatTimer=null;
+function playWaitingVideo(){
+  var vd=document.getElementById('holo-video');
+  if(!vd)return;
+  vd.onended=null;
+  vd.muted=false;vd.loop=true;vd.autoplay=true;
+  vd.src='/waiting_neurons.mp4';
+  vd.play().catch(function(e){log('waiting play: '+e.message)});
+}
+function stopWaitingVideo(){
+  var vd=document.getElementById('holo-video');
+  if(!vd)return;
+  vd.pause();vd.autoplay=false;vd.loop=false;vd.muted=true;vd.src='';
+}
 function setHoloState(state){
   holoState=state;
   var reactor=document.getElementById('cyber-reactor');
@@ -1354,16 +1367,16 @@ function setHoloState(state){
     if(reactor)reactor.style.opacity='0.6';
     if(core){core.style.background='var(--am)';core.style.boxShadow='0 0 20px var(--amg),0 0 60px rgba(255,170,0,0.4)'}
     if(status){status.textContent='◉ PROCESSING...';status.className='thinking'}
-    if(wg){wg.style.borderColor='rgba(255,170,0,0.3)';wg.style.boxShadow='0 0 20px rgba(255,170,0,0.12),inset 0 0 30px rgba(255,170,0,0.03)'}
+    if(wg){wg.style.borderColor='rgba(255,170,0,0.3)';wg.style.boxShadow='0 0 20px rgba(255,170,0,0.12),inset 0 0 30px rgba(255,170,0,0.03)';wg.classList.add('waiting-video')}
     holoMouthOpen=0.2;holoEyeScan=0.6;
+    playWaitingVideo();
   }else if(state==='speaking'){
     if(reactor)reactor.style.opacity='0.5';
     if(core){core.style.background='var(--cy)';core.style.boxShadow='0 0 20px var(--cyg),0 0 60px rgba(0,240,255,0.4)'}
     if(status){status.textContent='◉ SPEAKING...';status.className='speaking'}
-    if(wg){wg.style.borderColor='rgba(0,240,255,0.4)';wg.style.boxShadow='0 0 30px rgba(0,240,255,0.15),inset 0 0 40px rgba(0,240,255,0.04)'}
+    if(wg){wg.style.borderColor='rgba(0,240,255,0.4)';wg.style.boxShadow='0 0 30px rgba(0,240,255,0.15),inset 0 0 40px rgba(0,240,255,0.04)';wg.classList.add('waiting-video')}
     holoMouthOpen=1;holoEyeScan=0.3;
     if(!mouthAnim){var t=0;mouthAnim=setInterval(function(){t+=0.15;holoMouthOpen=0.3+0.7*(0.5+0.5*Math.sin(t))},50)}
-    // Widget fluttuante durante speaking
     if(wg&&!widgetFloatTimer){
       widgetFloat(wg);
     }
@@ -1371,10 +1384,11 @@ function setHoloState(state){
     if(reactor)reactor.style.opacity='var(--reactor-bg,0.35)';
     if(core){core.style.background='var(--cy)';core.style.boxShadow='0 0 20px var(--cyg),0 0 60px rgba(0,240,255,0.2)'}
     if(status){status.textContent='◆ SYSTEM STANDBY ◆';status.className='idle'}
-    if(wg){wg.style.borderColor='rgba(0,240,255,0.2)';wg.style.boxShadow='0 0 20px rgba(0,240,255,0.08),inset 0 0 30px rgba(0,240,255,0.02)';resetWidgetPos(wg)}
+    if(wg){wg.style.borderColor='rgba(0,240,255,0.2)';wg.style.boxShadow='0 0 20px rgba(0,240,255,0.08),inset 0 0 30px rgba(0,240,255,0.02)';wg.classList.remove('waiting-video');resetWidgetPos(wg)}
     holoMouthOpen=0;holoEyeScan=0;
     if(mouthAnim){clearInterval(mouthAnim);mouthAnim=null}
     if(widgetFloatTimer){clearInterval(widgetFloatTimer);widgetFloatTimer=null}
+    stopWaitingVideo();
   }
 }
 
@@ -1607,7 +1621,7 @@ async function speak(text){
       var blob=await r.blob(),url=URL.createObjectURL(blob);
       setHoloState('speaking');
       if(vd){
-        vd.src=url;vd.muted=false;vd.play();
+        vd.src=url;vd.muted=false;vd.loop=false;vd.play();
         toggleWidgetVideo(true);
         vd.onended=function(){vd.src='';URL.revokeObjectURL(url);toggleWidgetVideo(false);if(wg)wg.classList.remove('speaking');setHoloState('idle')};
       }
@@ -1652,7 +1666,7 @@ async function doChat(text){
     document.getElementById('latbar').textContent='LAT '+elapsed+'s';
     log('response '+elapsed+'s // model: '+(d.model||'groq'));
     triggerGlitch();
-    speak(d.reply||'');
+    await speak(d.reply||'');
   }catch(e){
     var th=document.getElementById('thinkEl');if(th)th.classList.remove('active');
     botmsg('error: '+e.message,[]);log('error: '+e.message);setHoloState('idle');
