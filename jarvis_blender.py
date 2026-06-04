@@ -53,15 +53,20 @@ def blender_get_scene() -> str:
     if r.get("status") == "error":
         return f"❌ {r.get('message')}"
     result = r.get("result", {})
-    scene = result.get("scene", {})
+    # Blender 5.x: struttura flat (result.name, result.objects)
+    # Blender 4.x: struttura annidata (result.scene.name, result.objects)
+    scene = result if "name" in result else result.get("scene", result)
     objects = result.get("objects", [])
     lines = [
         f"🎬 Scena: {scene.get('name', '?')} | Frame: {scene.get('frame_current', '?')} / {scene.get('frame_end', '?')}",
         f"   Render: {scene.get('render_engine', '?')} | FPS: {scene.get('fps', '?')}",
-        f"   Oggetti ({len(objects)}):",
+        f"   Oggetti ({len(objects)}) — Materiali: {result.get('materials_count','?')}:",
     ]
     for o in objects[:20]:
-        lines.append(f"   • {o.get('name','?')} [{o.get('type','?')}] loc={o.get('location','?')}")
+        loc = o.get('location', '?')
+        if isinstance(loc, list):
+            loc = f"[{', '.join(f'{v:.2f}' for v in loc)}]"
+        lines.append(f"   • {o.get('name','?')} [{o.get('type','?')}] {loc}")
     if len(objects) > 20:
         lines.append(f"   ... e altri {len(objects)-20} oggetti")
     return "\n".join(lines)
