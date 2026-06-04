@@ -111,6 +111,102 @@ class JarvisAgent:
         actions_done = []
         lower = user_message.lower().strip()
 
+        # ── BLENDER MCP — PRIORITÀ ASSOLUTA (deve stare prima di tutto) ───
+        # Attiva solo se "blender" è esplicitamente nel messaggio O parole
+        # inequivocabilmente 3D (renderizza, polyhaven, ecc.)
+        _blender_kw = any(w in lower for w in [
+            'blender', 'renderizza', 'render 3d', 'polyhaven', 'poly haven', 'hdri',
+        ])
+        if _blender_kw:
+            # stato / connessione
+            if any(w in lower for w in ['status', 'stato', 'connesso', 'attivo', 'funziona', 'online', 'controlla']):
+                result = execute_tool('blender_status', {})
+                actions_done.append(result)
+                actions_done.append(f'SPEECH:{result}')
+
+            # scena / oggetti
+            elif any(w in lower for w in ['scena', 'oggetti', 'mostra', 'lista', 'elenca', 'info', "c'è", 'hai in', 'cosa ha']):
+                result = execute_tool('blender_scene', {})
+                actions_done.append(result)
+                actions_done.append('SPEECH:Ecco la scena Blender.')
+
+            # importa/setup avatar
+            elif any(w in lower for w in ['importa', 'carica', 'setup', 'prepara', 'avatar', 'personaggio', 'modello']):
+                result = execute_tool('blender_setup_avatar', {})
+                actions_done.append(result)
+                actions_done.append('SPEECH:Avatar importato in Blender. Puoi rendere con "renderizza".')
+
+            # render
+            elif any(w in lower for w in ['renderizza', 'render', 'esegui render', 'fai render', 'avvia render']):
+                path_m = re.search(r'(?:salva|in|su)\s+([\w/~\-]+\.png)', lower)
+                out = path_m.group(1) if path_m else '/tmp/blender_render.png'
+                result = execute_tool('blender_render', {'output_path': out})
+                actions_done.append(result)
+                actions_done.append('SPEECH:Render completato.')
+
+            # screenshot viewport
+            elif any(w in lower for w in ['screenshot', 'schermata', 'viewport', 'anteprima']):
+                result = execute_tool('blender_screenshot', {'save_path': '/tmp/blender_viewport.png'})
+                actions_done.append(result)
+                actions_done.append('SPEECH:Screenshot viewport Blender salvato.')
+
+            # elimina oggetto
+            elif any(w in lower for w in ['elimina', 'cancella', 'rimuovi', 'delete']):
+                nm = re.search(r'(?:elimina|cancella|rimuovi|delete)\s+(?:l\'?|il\s+)?["\']?(\w[\w ]*?)["\']?$', user_message, re.IGNORECASE)
+                name = nm.group(1).strip() if nm else 'Cube'
+                result = execute_tool('blender_delete', {'name': name})
+                actions_done.append(result)
+                actions_done.append(f'SPEECH:Oggetto {name} eliminato.')
+
+            # crea oggetto
+            elif any(w in lower for w in ['crea', 'aggiungi', 'inserisci', 'metti', 'add', 'nuovo']):
+                _types = {'cubo':'cube','cube':'cube','sfera':'sphere','sphere':'sphere',
+                          'cilindro':'cylinder','piano':'plane','toro':'torus',
+                          'monkey':'monkey','suzanne':'monkey','luce':'light',
+                          'camera':'camera','cono':'cone'}
+                found_type = next((v for k,v in _types.items() if k in lower), 'cube')
+                nm = re.search(r'(?:chiamalo?|nome|chiama(?:la)?)\s+"?([^"]+)"?', lower)
+                name = nm.group(1).strip() if nm else None
+                _colors = {'rosso':[1,0,0],'blu':[0,0.3,1],'verde':[0,0.8,0],
+                           'giallo':[1,1,0],'bianco':[1,1,1],'nero':[0,0,0],
+                           'arancione':[1,0.4,0],'viola':[0.6,0,1],'ciano':[0,1,1],
+                           'rosa':[1,0.4,0.7],'grigio':[0.5,0.5,0.5]}
+                color = next((v for k,v in _colors.items() if k in lower), None)
+                args = {'object_type': found_type}
+                if name: args['name'] = name
+                result = execute_tool('blender_create', args)
+                if color and name:
+                    execute_tool('blender_material', {'object_name': name, 'color': color})
+                actions_done.append(result)
+                actions_done.append(f'SPEECH:{found_type} creato in Blender.')
+
+            # PolyHaven
+            elif any(w in lower for w in ['polyhaven', 'poly haven', 'hdri']):
+                qm = re.search(r'(?:cerca|trova|cerca)\s+(.+?)(?:\s+su|$)', lower)
+                query = qm.group(1).strip() if qm else 'forest'
+                atype = 'hdris' if 'hdri' in lower else 'textures'
+                result = execute_tool('blender_polyhaven_search', {'query': query, 'asset_type': atype})
+                actions_done.append(result)
+                actions_done.append(f'SPEECH:Risultati PolyHaven per {query}.')
+
+            # codice Python in Blender
+            elif any(w in lower for w in ['esegui', 'esegui codice', 'python blender', 'bpy']):
+                cm = re.search(r'(?:esegui|run|codice)\s+(.+)', user_message, re.IGNORECASE)
+                code = cm.group(1).strip() if cm else ''
+                if code:
+                    result = execute_tool('blender_execute', {'code': code})
+                    actions_done.append(result)
+                    actions_done.append('SPEECH:Codice eseguito in Blender.')
+
+            if not actions_done:
+                # Fallback generico: mostra scena
+                result = execute_tool('blender_scene', {})
+                actions_done.append(result)
+                actions_done.append('SPEECH:Ecco cosa c\'è in Blender.')
+
+            return actions_done  # Blender ha priorità — esce subito
+        # ── FINE BLENDER ───────────────────────────────────────────────────
+
         # invia email (PRIORITÀ — prima di calendario, per evitare falsi positivi)
         if not actions_done and any(w in lower for w in ['invia email', 'invia una email', 'manda email', 'manda una email', 'spedisci email']):
             import re as _re
@@ -423,6 +519,117 @@ class JarvisAgent:
         if not actions_done and ('prossima canzone' in lower or 'skip' in lower):
             result = execute_tool('play_music', {'action': 'next'})
             actions_done.append(f'music: {result}')
+
+        # ── (blocco Blender rimosso — ora in cima con priorità assoluta) ──
+        _is_blender = False  # disabilitato qui
+
+        # stato / connessione Blender
+        if not actions_done and _is_blender and any(w in lower for w in [
+            'stato blender', 'blender attivo', 'blender connesso', 'controlla blender',
+            'blender online', 'blender funziona', 'blender status'
+        ]):
+            result = execute_tool('blender_status', {})
+            actions_done.append(result)
+            actions_done.append(f'SPEECH:{result}')
+
+        # scena / oggetti in Blender
+        elif not actions_done and _is_blender and any(w in lower for w in [
+            'scena', 'oggetti', 'cosa c\'è', 'cosa hai', 'mostra', 'lista', 'elenca', 'info'
+        ]):
+            result = execute_tool('blender_scene', {})
+            actions_done.append(result)
+            actions_done.append(f'SPEECH:Ecco la scena Blender attuale.')
+
+        # importa avatar / setup avatar in Blender
+        elif not actions_done and _is_blender and any(w in lower for w in [
+            'importa avatar', 'carica avatar', 'metti avatar', 'setup avatar',
+            'avatar in blender', 'prepara scena', 'setup scena', 'importa modello',
+            'carica modello', 'importa personaggio'
+        ]):
+            result = execute_tool('blender_setup_avatar', {})
+            actions_done.append(result)
+            actions_done.append(f'SPEECH:Avatar importato in Blender con luci e camera. Usa "renderizza" per fare il render.')
+
+        # render in Blender
+        elif not actions_done and any(w in lower for w in [
+            'renderizza', 'fai il render', 'fai un render', 'render blender',
+            'render in blender', 'fai render', 'esegui render', 'avvia render'
+        ]):
+            import re as _re
+            path_m = _re.search(r'(?:salva|salvo|in|su|a)\s+([\w/~\-]+\.png)', lower)
+            out = path_m.group(1) if path_m else '/tmp/blender_render.png'
+            result = execute_tool('blender_render', {'output_path': out})
+            actions_done.append(result)
+            actions_done.append(f'SPEECH:Render completato e salvato.')
+
+        # screenshot viewport Blender
+        elif not actions_done and _is_blender and any(w in lower for w in [
+            'screenshot', 'schermata', 'viewport', 'mostra viewport'
+        ]):
+            result = execute_tool('blender_screenshot', {'save_path': '/tmp/blender_viewport.png'})
+            actions_done.append(result)
+            actions_done.append(f'SPEECH:Screenshot del viewport Blender salvato.')
+
+        # crea oggetto in Blender
+        elif not actions_done and _is_blender and any(w in lower for w in [
+            'crea', 'aggiungi', 'inserisci', 'metti', 'add', 'nuovo'
+        ]):
+            obj_types = {
+                'cubo': 'cube', 'cube': 'cube', 'sfera': 'sphere', 'sphere': 'sphere',
+                'cilindro': 'cylinder', 'cylinder': 'cylinder', 'piano': 'plane',
+                'toro': 'torus', 'torus': 'torus', 'monkey': 'monkey', 'suzanne': 'monkey',
+                'luce': 'light', 'light': 'light', 'camera': 'camera', 'cono': 'cone',
+            }
+            found_type = 'cube'
+            for k, v in obj_types.items():
+                if k in lower:
+                    found_type = v
+                    break
+            # Cerca nome tra virgolette
+            name_m = re.search(r'(?:chiamalo?|nome|named?)\s+"?([^"]+)"?', lower)
+            name = name_m.group(1).strip() if name_m else None
+            # Cerca colore
+            colors = {
+                'rosso': [1,0,0], 'blu': [0,0.3,1], 'verde': [0,0.8,0],
+                'giallo': [1,1,0], 'bianco': [1,1,1], 'nero': [0,0,0],
+                'arancione': [1,0.4,0], 'viola': [0.6,0,1], 'ciano': [0,1,1],
+                'rosa': [1,0.4,0.7], 'grigio': [0.5,0.5,0.5],
+            }
+            color = None
+            for k, v in colors.items():
+                if k in lower:
+                    color = v
+                    break
+            result = execute_tool('blender_create', {'object_type': found_type, 'name': name})
+            speech = f'{found_type} creato in Blender'
+            if color and name:
+                execute_tool('blender_material', {'object_name': name, 'color': color})
+                speech += f' con colore applicato'
+            elif color:
+                speech += f'. Specifica un nome per applicare il colore.'
+            actions_done.append(result)
+            actions_done.append(f'SPEECH:{speech}.')
+
+        # elimina oggetto da Blender
+        elif not actions_done and _is_blender and any(w in lower for w in [
+            'elimina', 'cancella', 'rimuovi', 'delete', 'remove'
+        ]):
+            name_m = re.search(r'(?:elimina|cancella|rimuovi|delete|remove)\s+(?:l\'?oggetto\s+|il\s+)?["\']?(\w[\w\s]*?)["\']?(?:\s|$)', user_message, re.IGNORECASE)
+            name = name_m.group(1).strip() if name_m else 'Cube'
+            result = execute_tool('blender_delete', {'name': name})
+            actions_done.append(result)
+            actions_done.append(f'SPEECH:Oggetto {name} eliminato da Blender.')
+
+        # cerca PolyHaven
+        elif not actions_done and any(w in lower for w in ['polyhaven', 'poly haven', 'hdri', 'texture polyhaven']):
+            q_m = re.search(r'(?:cerca|trova|search|scarica)\s+(.+?)(?:\s+su\s+polyhaven|$)', lower)
+            query = q_m.group(1).strip() if q_m else 'forest'
+            asset_type = 'hdris' if 'hdri' in lower else ('models' if 'model' in lower else 'textures')
+            result = execute_tool('blender_polyhaven_search', {'query': query, 'asset_type': asset_type})
+            actions_done.append(result)
+            actions_done.append(f'SPEECH:Ecco i risultati PolyHaven per {query}.')
+
+        # ── FINE BLENDER ───────────────────────────────────────────────────
 
         return actions_done
 
