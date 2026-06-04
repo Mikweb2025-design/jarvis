@@ -452,6 +452,18 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 .wave span:nth-child(3){height:10px;animation-delay:0.2s}.wave span:nth-child(4){height:6px;animation-delay:0.3s}
 .wave span:nth-child(5){height:3px;animation-delay:0.4s}
 @keyframes waveAnim{0%,100%{transform:scaleY(0.5)}50%{transform:scaleY(2)}}
+/* ── IMMAGINI IN CHAT ── */
+.chat-imgs{padding:8px 18px 4px;display:flex;flex-wrap:wrap;gap:8px}
+.chat-img-wrap{position:relative;display:inline-block;border-radius:6px;overflow:hidden;
+  border:1px solid rgba(0,240,255,0.2);box-shadow:0 0 16px rgba(0,240,255,0.1);
+  background:#0a0a0f;transition:transform 0.2s,box-shadow 0.2s}
+.chat-img-wrap:hover{transform:scale(1.02);box-shadow:0 0 30px rgba(0,240,255,0.25)}
+.chat-img{display:block;max-width:320px;max-height:280px;object-fit:contain;cursor:zoom-in;
+  border-radius:5px}
+.chat-img-dl{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,0.6);
+  color:var(--cy);font-size:14px;padding:3px 7px;border-radius:4px;text-decoration:none;
+  opacity:0;transition:opacity 0.2s;line-height:1;backdrop-filter:blur(4px)}
+.chat-img-wrap:hover .chat-img-dl{opacity:1}
 /* ── TOOL / TIER BADGE ── */
 .tool-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:3px;
   font-size:9px;font-family:var(--fm);letter-spacing:0.15em;border:1px solid;margin:1px 2px;
@@ -1861,20 +1873,52 @@ function botmsg(t,actions){
   if(!msgsEl)return;
   var th=document.getElementById('thinkEl');if(th)th.classList.remove('active');
   var d=document.createElement('div');d.className='msg';
-  var actHtml='', wc='';
+  var actHtml='', imgHtml='', wc='';
   (actions||[]).forEach(function(a){
-    if(a.startsWith('WEATHER_CARD:')){try{wc=weatherCardHTML(JSON.parse(a.slice(13)))}catch(e){}}
-    else if(a.startsWith('WEBCAM:')){try{var wd=JSON.parse(a.slice(7));openWebcam(wd.city,wd.lat,wd.lon,wd.video_id)}catch(e){}}
-    else if(!a.startsWith('SPEECH:')){
+    if(a.startsWith('WEATHER_CARD:')){
+      try{wc=weatherCardHTML(JSON.parse(a.slice(13)))}catch(e){}
+    } else if(a.startsWith('WEBCAM:')){
+      try{var wd=JSON.parse(a.slice(7));openWebcam(wd.city,wd.lat,wd.lon,wd.video_id)}catch(e){}
+    } else if(a.startsWith('IMAGE:')){
+      var url=a.slice(6).trim();
+      // Aggiungi timestamp per bust cache
+      var src=(url.includes('?')?url:url)+'&t='+Date.now();
+      imgHtml+='<div class="chat-img-wrap">'
+        +'<img class="chat-img" src="'+SRV+src+'" loading="lazy" '
+        +'onclick="openImgFull(this.src)" title="Clicca per ingrandire">'
+        +'<a class="chat-img-dl" href="'+SRV+src+'" download target="_blank">⬇</a>'
+        +'</div>';
+    } else if(!a.startsWith('SPEECH:')){
       var icon=toolIcon(a);
       var label=a.length>60?a.slice(0,60)+'…':a;
       actHtml+='<span class="tool-badge action">'+icon+' '+esc(label)+'</span>';
     }
   });
   var rendered=typeof marked!=='undefined'?marked.parse(t||''):t.replace(/\n/g,'<br>');
-  d.innerHTML='<div class="msg-header"><div class="msg-avatar jarvis">AI</div><span class="msg-name jarvis">J.A.R.V.I.S</span><span class="msg-time">'+ts()+'</span></div>'+(actHtml?'<div style="padding:4px 18px 2px;display:flex;flex-wrap:wrap;gap:2px">'+actHtml+'</div>':'')+wc+'<div class="msg-body jarvis-msg">'+rendered+'</div>';
+  d.innerHTML=
+    '<div class="msg-header"><div class="msg-avatar jarvis">AI</div>'
+    +'<span class="msg-name jarvis">J.A.R.V.I.S</span>'
+    +'<span class="msg-time">'+ts()+'</span></div>'
+    +(actHtml?'<div style="padding:4px 18px 2px;display:flex;flex-wrap:wrap;gap:2px">'+actHtml+'</div>':'')
+    +wc
+    +(imgHtml?'<div class="chat-imgs">'+imgHtml+'</div>':'')
+    +'<div class="msg-body jarvis-msg">'+rendered+'</div>';
   msgsEl.appendChild(d);msgsEl.scrollTop=msgsEl.scrollHeight;
   msgCount++;if(msgCountEl)msgCountEl.textContent=msgCount+' MSG';
+}
+
+// Lightbox immagine a schermo intero
+function openImgFull(src){
+  var ov=document.getElementById('img-lightbox');
+  if(!ov){
+    ov=document.createElement('div');ov.id='img-lightbox';
+    ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;cursor:zoom-out;backdrop-filter:blur(4px)';
+    ov.onclick=function(){ov.remove()};
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML='<img src="'+src+'" style="max-width:90vw;max-height:90vh;border-radius:6px;box-shadow:0 0 60px rgba(0,240,255,0.3);object-fit:contain">'
+    +'<button style="position:absolute;top:18px;right:24px;background:none;border:none;color:#fff;font-size:28px;cursor:pointer;opacity:0.7" onclick="document.getElementById(\'img-lightbox\').remove()">✕</button>';
+  ov.style.display='flex';
 }
 
 // ══════════════════════════════════════════════════

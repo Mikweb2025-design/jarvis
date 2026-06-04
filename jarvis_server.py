@@ -409,6 +409,42 @@ class H(BaseHTTPRequestHandler):
                 else:
                     self._json(404, {"error": "avatar.glb not found"})
 
+            elif self.path.startswith("/api/image"):
+                # Serve immagini da /tmp/ o dalla cartella output del progetto
+                # Sicurezza: solo estensioni immagine, solo percorsi whitelist
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                file_param = qs.get("file", [""])[0]
+                if not file_param:
+                    self._json(400, {"error": "Parametro 'file' mancante"}); return
+                # Normalizza il percorso
+                import posixpath
+                file_param = posixpath.basename(file_param)  # solo nome file, no path traversal
+                # Cerca prima in /tmp/, poi nella cartella output del progetto
+                ALLOWED_DIRS = [
+                    Path("/tmp"),
+                    Path(__file__).parent / "output",
+                ]
+                ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+                p = None
+                for d in ALLOWED_DIRS:
+                    candidate = d / file_param
+                    if candidate.exists() and candidate.suffix.lower() in ALLOWED_EXT:
+                        p = candidate; break
+                if not p:
+                    self._json(404, {"error": f"Immagine non trovata: {file_param}"}); return
+                ext_mime = {".png":"image/png", ".jpg":"image/jpeg", ".jpeg":"image/jpeg",
+                            ".gif":"image/gif", ".webp":"image/webp"}
+                mime = ext_mime.get(p.suffix.lower(), "image/png")
+                b = p.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(b)))
+                self.send_header("Cache-Control", "no-cache")
+                self._cors()
+                self.end_headers()
+                self.wfile.write(b)
+
             elif self.path=="/api/status":
                 self._json(200,{"status":"online","model":cfg["groq"]["model"],
                     "voice":cfg["tts"].get("qwen3_voice", cfg["tts"].get("voice", "vivian")),"version":"9.0",

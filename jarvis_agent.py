@@ -138,16 +138,22 @@ class JarvisAgent:
 
             # render
             elif any(w in lower for w in ['renderizza', 'render', 'esegui render', 'fai render', 'avvia render']):
-                path_m = re.search(r'(?:salva|in|su)\s+([\w/~\-]+\.png)', lower)
-                out = path_m.group(1) if path_m else '/tmp/blender_render.png'
+                import os
+                out = '/tmp/blender_render.png'
                 result = execute_tool('blender_render', {'output_path': out})
                 actions_done.append(result)
+                if os.path.exists(out):
+                    actions_done.append(f'IMAGE:/api/image?file=blender_render.png')
                 actions_done.append('SPEECH:Render completato.')
 
             # screenshot viewport
             elif any(w in lower for w in ['screenshot', 'schermata', 'viewport', 'anteprima']):
-                result = execute_tool('blender_screenshot', {'save_path': '/tmp/blender_viewport.png'})
+                import os
+                out = '/tmp/blender_viewport.png'
+                result = execute_tool('blender_screenshot', {'save_path': out})
                 actions_done.append(result)
+                if os.path.exists(out):
+                    actions_done.append(f'IMAGE:/api/image?file=blender_viewport.png')
                 actions_done.append('SPEECH:Screenshot viewport Blender salvato.')
 
             # elimina oggetto
@@ -453,6 +459,12 @@ class JarvisAgent:
         if not actions_done and ('screenshot' in lower or 'schermata' in lower or 'schermo' in lower):
             result = execute_tool('take_screenshot', {'mode': 'full'})
             actions_done.append(f'take_screenshot: {result}')
+            # Se il result contiene il percorso del file, mostralo in chat
+            import re as _re2, os as _os
+            _img_m = _re2.search(r'(/tmp/[\w\-\.]+\.png|/[\w/\-]+\.png)', str(result))
+            if _img_m and _os.path.exists(_img_m.group(1)):
+                _fn = _img_m.group(1).split('/')[-1]
+                actions_done.append(f'IMAGE:/api/image?file={_fn}')
 
         # volume
         elif 'volume' in lower and ('muto' in lower or 'silenzi' in lower or 'mute' in lower):
