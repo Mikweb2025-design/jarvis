@@ -573,29 +573,50 @@ class H(BaseHTTPRequestHandler):
                 self._cors(); self.end_headers()
 
                 try:
-                    # actions first
+                    # actions first — se trovate, esegui e torna SUBITO senza LLM
                     actions = agent._detect_direct_actions(msg)
                     if actions:
                         self._sse_event({"type":"actions","data":actions})
+                        # Estrai SPEECH se presente, generane TTS, chiudi senza LLM
+                        speech = next((a[7:] for a in actions if a.startswith('SPEECH:')), None)
+                        if speech:
+                            try:
+                                import asyncio, edge_tts, tempfile, base64
+                                voice_map = {"vivian":"it-IT-ElsaNeural","serena":"it-IT-ElsaNeural",
+                                    "aiden":"it-IT-DiegoNeural","ryan":"de-DE-KatjaNeural",
+                                    "eric":"de-DE-ConradNeural","dylan":"de-DE-ConradNeural"}
+                                tts_v = voice_map.get(voice, "it-IT-ElsaNeural")
+                                async def _qk():
+                                    comm = edge_tts.Communicate(speech, tts_v)
+                                    with tempfile.NamedTemporaryFile(suffix=".mp3",delete=False) as f: p=f.name
+                                    await comm.save(p); return p
+                                p = asyncio.run(_qk())
+                                with open(p,"rb") as f: aud=f.read()
+                                os.unlink(p)
+                                self._sse_event({"type":"audio_chunk","data":base64.b64encode(aud).decode(),"format":"mp3"})
+                            except Exception as _e:
+                                print(f"[TTS quick] {_e}")
+                        memory.log_conversation("user", msg)
+                        memory.log_conversation("assistant", speech or "✅")
+                        self._sse_event({"type":"reply","data":speech or "","elapsed":0,"model":"direct"})
+                        self._sse_event({"type":"done"})
+                        return  # ← NESSUN LLM, nessun riassunto
 
-                    # Streaming LLM reply + TTS simultaneo
+                    # Nessuna action diretta → chiamata LLM streaming
                     import requests as req_lib
                     from jarvis_agent import GROQ_URL, SYSTEM_PROMPT
-                    
+
                     memory_context = memory.get_context_for_prompt(msg, max_items=3)
                     memory.log_conversation("user", msg)
                     agent.history.append({"role": "user", "content": msg})
                     if len(agent.history) > 40:
                         agent.history = agent.history[-40:]
-                    
+
                     system_msg = SYSTEM_PROMPT + "\n\n" + memory_context
                     messages = [{"role": "system", "content": system_msg}] + agent.history
-                    
-                    if actions:
-                        messages.append({
-                            "role": "system",
-                            "content": "Azioni già eseguite: " + "; ".join(actions)
-                        })
+
+                    if False:  # placeholder rimosso
+                        pass
                     
                     headers = {
                         "Authorization": f"Bearer {cfg['groq']['api_key']}",
@@ -738,12 +759,18 @@ class H(BaseHTTPRequestHandler):
                 self._cors(); self.end_headers()
 
                 try:
-                    # actions first
+                    # actions first — se trovate, torna SUBITO senza LLM
                     actions = agent._detect_direct_actions(msg)
                     if actions:
                         self._sse_event({"type":"actions","data":actions})
+                        speech = next((a[7:] for a in actions if a.startswith('SPEECH:')), None)
+                        memory.log_conversation("user", msg)
+                        memory.log_conversation("assistant", speech or "✅")
+                        self._sse_event({"type":"reply","data":speech or "","elapsed":0,"model":"direct"})
+                        self._sse_event({"type":"done"})
+                        return  # ← NESSUN LLM
 
-                    # streaming reply
+                    # streaming reply (solo se nessuna action diretta)
                     reply, elapsed = agent.chat_stream(msg)
                     self._sse_event({"type":"reply","data":reply,"elapsed":elapsed,"model":cfg["groq"]["model"]})
                     self._sse_event({"type":"done"})

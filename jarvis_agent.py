@@ -122,19 +122,16 @@ class JarvisAgent:
             if any(w in lower for w in ['status', 'stato', 'connesso', 'attivo', 'funziona', 'online', 'controlla']):
                 result = execute_tool('blender_status', {})
                 actions_done.append(result)
-                actions_done.append(f'SPEECH:{result}')
 
             # scena / oggetti
             elif any(w in lower for w in ['scena', 'oggetti', 'mostra', 'lista', 'elenca', 'info', "c'è", 'hai in', 'cosa ha']):
                 result = execute_tool('blender_scene', {})
                 actions_done.append(result)
-                actions_done.append('SPEECH:Ecco la scena Blender.')
 
             # importa/setup avatar
             elif any(w in lower for w in ['importa', 'carica', 'setup', 'prepara', 'avatar', 'personaggio', 'modello']):
                 result = execute_tool('blender_setup_avatar', {})
                 actions_done.append(result)
-                actions_done.append('SPEECH:Avatar importato in Blender. Puoi rendere con "renderizza".')
 
             # render
             elif any(w in lower for w in ['renderizza', 'render', 'esegui render', 'fai render', 'avvia render']):
@@ -143,8 +140,7 @@ class JarvisAgent:
                 result = execute_tool('blender_render', {'output_path': out})
                 actions_done.append(result)
                 if os.path.exists(out):
-                    actions_done.append(f'IMAGE:/api/image?file=blender_render.png')
-                actions_done.append('SPEECH:Render completato.')
+                    actions_done.append('IMAGE:/api/image?file=blender_render.png')
 
             # screenshot viewport
             elif any(w in lower for w in ['screenshot', 'schermata', 'viewport', 'anteprima']):
@@ -153,8 +149,7 @@ class JarvisAgent:
                 result = execute_tool('blender_screenshot', {'save_path': out})
                 actions_done.append(result)
                 if os.path.exists(out):
-                    actions_done.append(f'IMAGE:/api/image?file=blender_viewport.png')
-                actions_done.append('SPEECH:Screenshot viewport Blender salvato.')
+                    actions_done.append('IMAGE:/api/image?file=blender_viewport.png')
 
             # elimina oggetto
             elif any(w in lower for w in ['elimina', 'cancella', 'rimuovi', 'delete']):
@@ -162,7 +157,6 @@ class JarvisAgent:
                 name = nm.group(1).strip() if nm else 'Cube'
                 result = execute_tool('blender_delete', {'name': name})
                 actions_done.append(result)
-                actions_done.append(f'SPEECH:Oggetto {name} eliminato.')
 
             # crea oggetto
             elif any(w in lower for w in ['crea', 'aggiungi', 'inserisci', 'metti', 'add', 'nuovo']):
@@ -184,7 +178,6 @@ class JarvisAgent:
                 if color and name:
                     execute_tool('blender_material', {'object_name': name, 'color': color})
                 actions_done.append(result)
-                actions_done.append(f'SPEECH:{found_type} creato in Blender.')
 
             # PolyHaven
             elif any(w in lower for w in ['polyhaven', 'poly haven', 'hdri']):
@@ -193,7 +186,6 @@ class JarvisAgent:
                 atype = 'hdris' if 'hdri' in lower else 'textures'
                 result = execute_tool('blender_polyhaven_search', {'query': query, 'asset_type': atype})
                 actions_done.append(result)
-                actions_done.append(f'SPEECH:Risultati PolyHaven per {query}.')
 
             # codice Python in Blender
             elif any(w in lower for w in ['esegui', 'esegui codice', 'python blender', 'bpy']):
@@ -202,13 +194,11 @@ class JarvisAgent:
                 if code:
                     result = execute_tool('blender_execute', {'code': code})
                     actions_done.append(result)
-                    actions_done.append('SPEECH:Codice eseguito in Blender.')
 
             if not actions_done:
                 # Fallback generico: mostra scena
                 result = execute_tool('blender_scene', {})
                 actions_done.append(result)
-                actions_done.append('SPEECH:Ecco cosa c\'è in Blender.')
 
             return actions_done  # Blender ha priorità — esce subito
         # ── FINE BLENDER ───────────────────────────────────────────────────
@@ -653,23 +643,17 @@ class JarvisAgent:
 
         # Se azione diretta eseguita → rispondi subito senza chiamare LLM
         if actions_done:
-            # Cerca messaggio vocale speciale (SPEECH:)
-            speech_msg = None
-            filtered = []
-            for a in actions_done:
-                if a.startswith('SPEECH:'):
-                    speech_msg = a[7:]
-                else:
-                    filtered.append(a)
-            if speech_msg:
-                reply = speech_msg
-            else:
-                reply = "✅ " + "\n".join(filtered)
+            # Separa SPEECH: dal resto delle actions
+            speech_msg = next((a[7:] for a in actions_done if a.startswith('SPEECH:')), None)
+            filtered = [a for a in actions_done if not a.startswith('SPEECH:')]
+            # Se c'è SPEECH usa quello, altrimenti stringa vuota
+            # (speak("") non parla — evita riassunti automatici)
+            reply = speech_msg or ""
             self.history.append({"role": "user", "content": user_message})
-            self.history.append({"role": "assistant", "content": reply})
+            self.history.append({"role": "assistant", "content": reply or "✅"})
             if len(self.history) > 40:
                 self.history = self.history[-40:]
-            memory.log_conversation("assistant", reply)
+            memory.log_conversation("assistant", reply or "✅")
             return reply, filtered
 
         # 2. carica contesto memoria
@@ -755,19 +739,14 @@ class JarvisAgent:
 
         # Se azione diretta eseguita → rispondi subito senza chiamare LLM
         if actions_done:
-            speech_msg = None
-            filtered = []
-            for a in actions_done:
-                if a.startswith('SPEECH:'):
-                    speech_msg = a[7:]
-                else:
-                    filtered.append(a)
-            reply = speech_msg if speech_msg else "✅ " + "\n".join(filtered)
+            speech_msg = next((a[7:] for a in actions_done if a.startswith('SPEECH:')), None)
+            filtered = [a for a in actions_done if not a.startswith('SPEECH:')]
+            reply = speech_msg or ""  # vuoto = nessun TTS, nessun riassunto
             self.history.append({"role": "user", "content": user_message})
-            self.history.append({"role": "assistant", "content": reply})
+            self.history.append({"role": "assistant", "content": reply or "✅"})
             if len(self.history) > 40:
                 self.history = self.history[-40:]
-            memory.log_conversation("assistant", reply)
+            memory.log_conversation("assistant", reply or "✅")
             return reply, 0.0
 
         memory_context = memory.get_context_for_prompt(user_message, max_items=3)
