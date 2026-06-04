@@ -34,7 +34,7 @@ try:
         blender_create_object, blender_delete_object, blender_set_material,
         blender_move_object, blender_screenshot, blender_render,
         blender_setup_avatar, blender_focus_view,
-        blender_enable_hyper3d, blender_generate_hyper3d,
+        blender_enable_hyper3d, blender_generate_hyper3d, blender_generate_shape3d,
         blender_polyhaven_search, blender_polyhaven_download,
         blender_sketchfab_search, blender_sketchfab_download,
     )
@@ -520,6 +520,7 @@ if _BLENDER_OK:
         "blender_focus_view": lambda **_: blender_focus_view(),
         "blender_enable_hyper3d": lambda api_key="vibecoding", **_: blender_enable_hyper3d(api_key),
         "blender_generate_hyper3d": lambda prompt="", **_: blender_generate_hyper3d(prompt)[1],
+        "blender_generate_shape3d": lambda prompt="", **_: blender_generate_shape3d(prompt)[1],
         # PolyHaven
         "blender_polyhaven_search":    lambda query="", asset_type="hdris", **_:
                                        blender_polyhaven_search(query, asset_type),

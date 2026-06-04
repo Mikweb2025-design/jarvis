@@ -232,23 +232,34 @@ class JarvisAgent:
                     # IBRIDO: prima prova Hyper3D (text-to-3D realistico),
                     # se fallisce ripiega sul codice LLM con primitive
                     result = None
+                    # Shap-E locale è opt-in (lento ~80s, qualità bassa):
+                    # attivato da parole chiave "shap-e", "shape3d" o "genera 3d reale"
+                    want_shape3d = any(w in lower for w in ['shap-e', 'shape3d', 'shap e', 'genera mesh', 'mesh reale', 'modello vero'])
+                    # 1. Hyper3D Rodin (realistico, richiede credito API)
                     try:
                         from jarvis_blender import blender_generate_hyper3d
                         ok, msg = blender_generate_hyper3d(req)
-                        if ok:
-                            result = msg  # modello realistico importato
-                        else:
-                            print(f"  [Blender] Hyper3D non disponibile ({msg}), fallback codice LLM")
+                        if ok: result = msg
+                        else: print(f"  [Blender] Hyper3D ND ({msg})")
                     except Exception as _e:
-                        print(f"  [Blender] Hyper3D errore: {_e}")
+                        print(f"  [Blender] Hyper3D err: {_e}")
+                    # 2. Shap-E locale SOLO se richiesto esplicitamente
+                    if result is None and want_shape3d:
+                        try:
+                            from jarvis_blender import blender_generate_shape3d
+                            ok, msg = blender_generate_shape3d(req)
+                            if ok: result = msg
+                            else: print(f"  [Blender] Shap-E ND ({msg})")
+                        except Exception as _e:
+                            print(f"  [Blender] Shap-E err: {_e}")
+                    # 3. Fallback default: LLM genera codice bpy con primitive (veloce)
                     if result is None:
-                        # Fallback: LLM genera codice bpy → eseguo via MCP
                         code, err = self._blender_ai_code(req)
                         if err or not code:
                             result = f"❌ Generazione fallita: {err or 'vuoto'}"
                         else:
                             execute_tool('blender_execute', {'code': code})
-                            result = f"✅ Generato '{req}' (codice AI con primitive)"
+                            result = f"✅ Generato '{req}' (codice AI primitive)"
                 actions_done.append(result)
                 # Inquadra + screenshot in chat
                 execute_tool('blender_focus_view', {})
