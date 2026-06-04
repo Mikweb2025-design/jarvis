@@ -206,17 +206,105 @@ def blender_screenshot(save_path: str = None) -> str:
     return f"📸 Screenshot catturato (nessun file path)"
 
 def blender_render(output_path: str = "/tmp/blender_render.png",
-                   frame: int = None) -> str:
-    """Esegue il render della scena Blender e salva in output_path."""
+                   frame: int = None, engine: str = "EEVEE") -> str:
+    """Esegue il render della scena Blender e salva in output_path.
+    engine: EEVEE | CYCLES | WORKBENCH"""
     frame_code = f"bpy.context.scene.frame_set({frame})" if frame else ""
+    # Blender 4.x usa BLENDER_EEVEE, 5.x uguale
+    engine_id = f"BLENDER_{engine}" if not engine.startswith("BLENDER_") else engine
     code = f"""
 import bpy
 {frame_code}
+try:
+    bpy.context.scene.render.engine = '{engine_id}'
+except:
+    bpy.context.scene.render.engine = 'BLENDER_EEVEE'
 bpy.context.scene.render.filepath = r'{output_path}'
+bpy.context.scene.render.resolution_x = 800
+bpy.context.scene.render.resolution_y = 1000
+bpy.context.scene.eevee.taa_render_samples = 32
 bpy.ops.render.render(write_still=True)
-print("Render completato: {output_path}")
 """
-    return blender_execute(code)
+    r = blender_execute(code)
+    import os
+    if os.path.exists(output_path):
+        size_kb = os.path.getsize(output_path) // 1024
+        return f"✅ Render salvato: {output_path} ({size_kb} KB)"
+    return r
+
+def blender_setup_avatar(glb_path: str = None) -> str:
+    """Importa l'avatar RPM in Blender con scena professionale (luci + camera ritratto).
+    Se glb_path non specificato, usa l'avatar di Jarvis (assets/avatar.glb)."""
+    import os
+    if not glb_path:
+        glb_path = str(Path(__file__).parent / "assets" / "avatar.glb")
+    if not os.path.exists(glb_path):
+        return f"❌ File non trovato: {glb_path}"
+
+    code = f"""
+import bpy, mathutils
+
+# 1. Svuota scena (mantieni camera)
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete()
+
+# 2. Key light (area warm)
+bpy.ops.object.light_add(type='AREA', location=(2, -2, 4))
+key = bpy.context.active_object
+key.name = 'KeyLight'
+key.data.energy = 500
+key.data.size = 2
+key.rotation_euler = (0.9, 0.1, 0.5)
+
+# 3. Fill light (freddo)
+bpy.ops.object.light_add(type='AREA', location=(-2, -1, 2))
+fill = bpy.context.active_object
+fill.name = 'FillLight'
+fill.data.energy = 150
+fill.data.color = (0.8, 0.9, 1.0)
+
+# 4. Rim light (blu/viola per effetto holo)
+bpy.ops.object.light_add(type='SPOT', location=(-1, 2, 3))
+rim = bpy.context.active_object
+rim.name = 'RimLight'
+rim.data.energy = 300
+rim.data.color = (0.3, 0.6, 1.0)
+rim.rotation_euler = (0.6, 0, -0.8)
+
+# 5. Importa GLB
+bpy.ops.import_scene.gltf(filepath=r'{glb_path}')
+for obj in bpy.context.selected_objects:
+    obj.location = (0, 0, 0)
+
+# 6. Camera ritratto (busto)
+bpy.ops.object.camera_add(location=(0, -0.7, 1.68))
+cam = bpy.context.active_object
+cam.name = 'PortraitCam'
+cam.rotation_euler = mathutils.Euler((1.5708, 0, 0), 'XYZ')
+cam.data.lens = 85
+bpy.context.scene.camera = cam
+
+# 7. Sfondo scuro
+world = bpy.context.scene.world or bpy.data.worlds.new('World')
+bpy.context.scene.world = world
+world.use_nodes = True
+bg = world.node_tree.nodes.get('Background')
+if bg:
+    bg.inputs[0].default_value = (0.02, 0.02, 0.05, 1)
+    bg.inputs[1].default_value = 1.0
+
+# 8. Render settings EEVEE
+bpy.context.scene.render.engine = 'BLENDER_EEVEE'
+bpy.context.scene.render.resolution_x = 800
+bpy.context.scene.render.resolution_y = 1000
+bpy.context.scene.eevee.taa_render_samples = 32
+bpy.context.scene.render.film_transparent = False
+"""
+    r = blender_execute(code)
+    # Conta oggetti nella scena
+    info = _send("get_scene_info").get("result", {})
+    n = info.get("object_count", "?")
+    return f"✅ Avatar importato in Blender ({n} oggetti). Chiama blender_render() per renderizzare."
 
 # ── PolyHaven ─────────────────────────────────────────────────────────────
 

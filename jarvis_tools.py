@@ -33,6 +33,7 @@ try:
         blender_status, blender_get_scene, blender_get_object, blender_execute,
         blender_create_object, blender_delete_object, blender_set_material,
         blender_move_object, blender_screenshot, blender_render,
+        blender_setup_avatar,
         blender_polyhaven_search, blender_polyhaven_download,
         blender_sketchfab_search, blender_sketchfab_download,
     )
@@ -511,8 +512,10 @@ if _BLENDER_OK:
                               blender_move_object(name, location, rotation, scale),
         # Render e screenshot
         "blender_screenshot": lambda save_path=None, **_: blender_screenshot(save_path),
-        "blender_render":     lambda output_path="/tmp/blender_render.png", frame=None, **_:
-                              blender_render(output_path, frame),
+        "blender_render":     lambda output_path="/tmp/blender_render.png", frame=None, engine="EEVEE", **_:
+                              blender_render(output_path, frame, engine),
+        "blender_setup_avatar": lambda glb_path=None, **_:
+                              blender_setup_avatar(glb_path),
         # PolyHaven
         "blender_polyhaven_search":    lambda query="", asset_type="hdris", **_:
                                        blender_polyhaven_search(query, asset_type),
