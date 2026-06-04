@@ -229,13 +229,26 @@ class JarvisAgent:
                     execute_tool('blender_create', {'object_type': simple})
                     result = f"✅ {simple} creato"
                 else:
-                    # Richiesta creativa → LLM genera codice bpy → eseguo via MCP
-                    code, err = self._blender_ai_code(req)
-                    if err or not code:
-                        result = f"❌ Generazione codice fallita: {err or 'vuoto'}"
-                    else:
-                        result = execute_tool('blender_execute', {'code': code})
-                        result = f"✅ Generato '{req}' in Blender via codice AI"
+                    # IBRIDO: prima prova Hyper3D (text-to-3D realistico),
+                    # se fallisce ripiega sul codice LLM con primitive
+                    result = None
+                    try:
+                        from jarvis_blender import blender_generate_hyper3d
+                        ok, msg = blender_generate_hyper3d(req)
+                        if ok:
+                            result = msg  # modello realistico importato
+                        else:
+                            print(f"  [Blender] Hyper3D non disponibile ({msg}), fallback codice LLM")
+                    except Exception as _e:
+                        print(f"  [Blender] Hyper3D errore: {_e}")
+                    if result is None:
+                        # Fallback: LLM genera codice bpy → eseguo via MCP
+                        code, err = self._blender_ai_code(req)
+                        if err or not code:
+                            result = f"❌ Generazione fallita: {err or 'vuoto'}"
+                        else:
+                            execute_tool('blender_execute', {'code': code})
+                            result = f"✅ Generato '{req}' (codice AI con primitive)"
                 actions_done.append(result)
                 # Inquadra + screenshot in chat
                 execute_tool('blender_focus_view', {})

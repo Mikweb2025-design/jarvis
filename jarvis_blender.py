@@ -375,6 +375,57 @@ for area in bpy.context.screen.areas:
     blender_execute(code)
     return "✅ Viewport aggiornato (material preview + inquadratura)"
 
+# ── Hyper3D Rodin (text-to-3D realistico) ──────────────────────────────────
+
+def blender_enable_hyper3d(api_key: str = "vibecoding") -> str:
+    """Abilita Hyper3D Rodin con la chiave indicata (default: trial gratuita 'vibecoding')."""
+    code = f"""
+import bpy
+s = bpy.context.scene
+s.blendermcp_use_hyper3d = True
+s.blendermcp_hyper3d_mode = 'MAIN_SITE'
+s.blendermcp_hyper3d_api_key = '{api_key}'
+"""
+    blender_execute(code)
+    st = _send("get_hyper3d_status").get("result", {})
+    return "✅ Hyper3D abilitato" if st.get("enabled") else "⚠ Hyper3D non abilitato"
+
+def blender_generate_hyper3d(prompt: str, timeout: int = 150):
+    """Genera un modello 3D realistico da testo via Hyper3D Rodin e lo importa.
+    Ritorna (success: bool, message: str). Se fallisce (es. fondi esauriti),
+    success=False così il chiamante può ripiegare sul codice LLM."""
+    import time as _t
+    # 1. Crea il job
+    r = _send("create_rodin_job", {"text_prompt": prompt})
+    res = r.get("result", r)
+    if not isinstance(res, dict) or res.get("error") or res.get("status") == "error":
+        return False, f"Hyper3D non disponibile: {res.get('error') or res.get('message','?')}"
+    # Estrai uuid + subscription_key (struttura API deemos)
+    task_uuid = res.get("uuid")
+    jobs = res.get("jobs", {})
+    sub_key = jobs.get("subscription_key") if isinstance(jobs, dict) else None
+    if not task_uuid or not sub_key:
+        return False, f"Hyper3D risposta inattesa: {str(res)[:120]}"
+    # 2. Poll fino a completamento
+    t0 = _t.time()
+    while _t.time() - t0 < timeout:
+        ps = _send("poll_rodin_job_status", {"subscription_key": sub_key}).get("result", {})
+        statuses = ps.get("status_list", []) if isinstance(ps, dict) else []
+        if statuses and all(s in ("Done", "Failed") for s in statuses):
+            if any(s == "Failed" for s in statuses):
+                return False, "Hyper3D: generazione fallita"
+            break
+        _t.sleep(4)
+    else:
+        return False, "Hyper3D: timeout generazione"
+    # 3. Importa l'asset
+    name = prompt[:40].strip().replace("'", "")
+    imp = _send("import_generated_asset", {"task_uuid": task_uuid, "name": name})
+    impres = imp.get("result", imp)
+    if isinstance(impres, dict) and (impres.get("error") or impres.get("status") == "error"):
+        return False, f"Hyper3D import fallito: {impres.get('error') or impres.get('message')}"
+    return True, f"✅ Modello realistico '{name}' generato e importato (Hyper3D Rodin)"
+
 # ── PolyHaven ─────────────────────────────────────────────────────────────
 
 def blender_polyhaven_search(query: str, asset_type: str = "hdris") -> str:
