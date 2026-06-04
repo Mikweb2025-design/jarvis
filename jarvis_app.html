@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>J.A.R.V.I.S — CYBERPUNK HUD v9.0</title>
+<title>J.A.R.V.I.S — CYBERPUNK HUD v9.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script type="importmap">
@@ -1691,22 +1691,7 @@ function weatherCardHTML(d){
   return '';
 }
 
-function botmsg(t,actions){
-  if(!msgsEl)return;
-  var th=document.getElementById('thinkEl');if(th)th.classList.remove('active');
-  var d=document.createElement('div');d.className='msg';
-  var acts=[], wc='';
-  (actions||[]).forEach(function(a){
-    if(a.startsWith('WEATHER_CARD:')){try{wc=weatherCardHTML(JSON.parse(a.slice(13)))}catch(e){}}
-    else if(a.startsWith('WEBCAM:')){try{var wd=JSON.parse(a.slice(7));openWebcam(wd.city,wd.lat,wd.lon,wd.video_id)}catch(e){}}
-    else{acts.push('<div style="font-size:6px;color:var(--pk);font-family:var(--fm);padding-left:18px">> '+esc(a)+'</div>')}
-  });
-  var rendered=typeof marked!=='undefined'?marked.parse(t||''):t.replace(/\n/g,'<br>');
-  d.innerHTML='<div class="msg-header"><div class="msg-avatar jarvis">AI</div><span class="msg-name jarvis">J.A.R.V.I.S</span><span class="msg-time">'+ts()+'</span></div>'+acts.join('')+wc+'<div class="msg-body jarvis-msg">'+rendered+'</div>';
-  msgsEl.appendChild(d);msgsEl.scrollTop=msgsEl.scrollHeight;
-  msgCount++;if(msgCountEl)msgCountEl.textContent=msgCount+' MSG';
-}
-
+// botmsg è definita più avanti con supporto IMAGE — questa è rimossa per evitare duplicati
 function showThinking(){var el=document.getElementById('thinkEl');if(el)el.classList.add('active')}
 
 async function speak(text){
@@ -1752,7 +1737,12 @@ async function doChat(text){
     if(!r.ok)throw new Error('HTTP '+r.status);
     var d=await r.json();if(d.error)throw new Error(d.error);
     var elapsed=((Date.now()-t0)/1000).toFixed(2);
-    botmsg(d.reply||'',d.actions||[]);
+    // Se reply vuoto ma ci sono actions, usa '' (botmsg mostrerà badge + immagini)
+    // Se reply E actions entrambi vuoti, non aggiungere messaggio fantasma
+    var hasActions=(d.actions||[]).filter(function(a){return !a.startsWith('SPEECH:')}).length>0;
+    if((d.reply||'').trim()!=='' || hasActions){
+      botmsg(d.reply||'',d.actions||[]);
+    }
     if(d.model)showTierBadge(!!d.fast,d.model.replace('llama-','').replace('-versatile','').replace('-instant','⚡'));
     document.getElementById('latbar').textContent='LAT '+elapsed+'s';
     log('response '+elapsed+'s // model: '+(d.model||'groq'));
