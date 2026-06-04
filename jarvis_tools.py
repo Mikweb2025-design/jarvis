@@ -168,6 +168,17 @@ TOOLS_SCHEMA = [
     {"type":"function","function":{"name":"approval_pending","description":"Lista richieste approvazione pending","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"approval_approve","description":"Approva richiesta","parameters":{"type":"object","properties":{"request_id":{"type":"string"},"auto_future":{"type":"boolean","default":False}},"required":["request_id"]}}},
     {"type":"function","function":{"name":"approval_deny","description":"Nega richiesta","parameters":{"type":"object","properties":{"request_id":{"type":"string"}},"required":["request_id"]}}},
+    # Blender 3D (via MCP)
+    {"type":"function","function":{"name":"blender_status","description":"Verifica se Blender è connesso e gli addon attivi","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"blender_scene","description":"Info sulla scena Blender: oggetti, frame, render engine","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"blender_execute","description":"Esegue codice Python bpy arbitrario in Blender. Usalo per creare/modificare QUALSIASI cosa: oggetti, materiali, modificatori, ecc.","parameters":{"type":"object","properties":{"code":{"type":"string","description":"Codice Python con bpy"}},"required":["code"]}}},
+    {"type":"function","function":{"name":"blender_create","description":"Crea una primitiva 3D in Blender","parameters":{"type":"object","properties":{"object_type":{"type":"string","enum":["cube","sphere","cylinder","plane","torus","monkey","cone","light","camera"]},"name":{"type":"string"}},"required":["object_type"]}}},
+    {"type":"function","function":{"name":"blender_delete","description":"Elimina un oggetto Blender per nome","parameters":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}},
+    {"type":"function","function":{"name":"blender_material","description":"Applica un materiale colorato a un oggetto","parameters":{"type":"object","properties":{"object_name":{"type":"string"},"color":{"type":"array","items":{"type":"number"},"description":"[R,G,B] 0-1"},"metallic":{"type":"number","default":0.0},"roughness":{"type":"number","default":0.5}},"required":["object_name"]}}},
+    {"type":"function","function":{"name":"blender_render","description":"Renderizza la scena Blender e salva PNG","parameters":{"type":"object","properties":{"output_path":{"type":"string","default":"/tmp/blender_render.png"}}}}},
+    {"type":"function","function":{"name":"blender_screenshot","description":"Cattura screenshot del viewport 3D","parameters":{"type":"object","properties":{"save_path":{"type":"string","default":"/tmp/blender_viewport.png"}}}}},
+    {"type":"function","function":{"name":"blender_focus_view","description":"Material preview + inquadra tutti gli oggetti nel viewport","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"blender_setup_avatar","description":"Importa l'avatar RPM con luci e camera ritratto","parameters":{"type":"object","properties":{}}}},
 ]
 
 def _run(cmd):

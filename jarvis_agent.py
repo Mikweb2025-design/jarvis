@@ -71,10 +71,17 @@ CAPACITÀ:
 - Git: status, commit, branch, diff, log
 - Web search: DuckDuckGo con risultati completi
 - Approval flow: approvazione per azioni sensibili
-- Blender 3D: controlla Blender via MCP — crea oggetti, imposta materiali, esegui render,
-  scarica asset da PolyHaven e Sketchfab. Usa blender_* tools quando l'utente parla di
-  3D, modellazione, render, oggetti 3D, scene Blender, HDRI, texture, ecc.
-  (richiede Blender aperto con addon blender_addon.py attivo)
+- Blender 3D: controlla Blender via MCP. Hai questi tool: blender_status,
+  blender_scene, blender_execute (esegui QUALSIASI codice bpy), blender_create,
+  blender_delete, blender_material, blender_render, blender_screenshot,
+  blender_setup_avatar, blender_focus_view.
+  REGOLA BLENDER IMPORTANTE: per creare/modellare QUALSIASI cosa (cane, casa,
+  albero, ecc.) chiama UNA SOLA VOLTA blender_execute con TUTTO il codice bpy
+  completo: crea le primitive, assegna i materiali colorati (mat.use_nodes=True,
+  nodo BSDF_PRINCIPLED, Base Color) a OGNI parte SUBITO dopo averla creata
+  riferendoti a bpy.context.active_object. NON fare più chiamate separate, NON
+  usare blender_material come tool a parte, NON chiamare focus/screenshot
+  (avvengono in automatico). Una chiamata sola, codice completo e autosufficiente.
 
 REGOLE:
 1. Quando l'utente chiede di fare qualcosa, usa lo strumento appropriato
@@ -153,12 +160,10 @@ class JarvisAgent:
         actions_done = []
         lower = user_message.lower().strip()
 
-        # ── BLENDER MCP — PRIORITÀ ASSOLUTA (deve stare prima di tutto) ───
-        # Attiva solo se "blender" è esplicitamente nel messaggio O parole
-        # inequivocabilmente 3D (renderizza, polyhaven, ecc.)
-        _blender_kw = any(w in lower for w in [
-            'blender', 'renderizza', 'render 3d', 'polyhaven', 'poly haven', 'hdri',
-        ])
+        # ── BLENDER: ora gestito dal LOOP AGENTICO (tool calling nativo) ───
+        # Il blocco regex sotto è DISATTIVATO: le richieste Blender passano
+        # all'LLM che sceglie i blender_* tools da solo (architettura agentica).
+        _blender_kw = False  # era: any(w in lower for w in ['blender','renderizza',...])
         if _blender_kw:
             # stato / connessione
             if any(w in lower for w in ['status', 'stato', 'connesso', 'attivo', 'funziona', 'online', 'controlla']):
@@ -743,46 +748,161 @@ class JarvisAgent:
         system_msg = SYSTEM_PROMPT + "\n\n" + memory_context
         messages = [{"role": "system", "content": system_msg}] + self.history
 
+        if self._needs_tools(user_message):
+            # ── LOOP AGENTICO: l'LLM sceglie i tool, esegue, vede i risultati, itera ──
+            reply, tool_actions = self._agentic_loop(messages, user_message)
+            self.history.append({"role": "assistant", "content": reply or "✅"})
+            memory.log_conversation("assistant", reply or "✅")
+            return reply, (actions_done + tool_actions)
+
+        # ── Chat normale: completion semplice SENZA tool (no 400, no rate-limit extra) ──
+        chosen_model = _detect_complexity(user_message) or self.cfg["groq"]["model"]
+        payload = {"model": chosen_model, "messages": messages,
+                   "temperature": float(self.cfg["groq"]["temperature"]), "max_tokens": 2048}
+        headers = {"Authorization": f"Bearer {self.cfg['groq']['api_key']}", "Content-Type": "application/json"}
+        try:
+            resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=45)
+            reply = resp.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            reply = f"[Errore connessione] {e}"
+        self.history.append({"role": "assistant", "content": reply})
+        memory.log_conversation("assistant", reply)
+        return reply, actions_done
+
+    def _needs_tools(self, msg):
+        """True se il messaggio richiede strumenti (azioni), False per pura conversazione.
+        Solo allora attiviamo il loop agentico con i tool."""
+        low = msg.lower()
+        return any(w in low for w in [
+            # blender / 3d
+            'blender', 'render', '3d', 'modell', 'avatar', 'scena', 'oggetto 3d', 'polyhaven', 'hdri',
+            # azioni macOS / tool
+            'crea', 'fai', 'fammi', 'genera', 'costruisci', 'disegna', 'apri', 'cerca', 'manda',
+            'invia', 'scrivi', 'screenshot', 'volume', 'luminos', 'calendario', 'evento',
+            'email', 'mail', 'nota', 'promemoria', 'musica', 'file', 'cartella', 'git',
+        ])
+
+    def _relevant_tools(self, user_message):
+        """Seleziona un sottoinsieme rilevante di TOOLS_SCHEMA per non superare i
+        limiti di token (lo schema completo da 100+ tool è troppo grande)."""
+        low = user_message.lower()
+        def names(schema): return [t for t in schema]
+        is_blender = any(w in low for w in ['blender','render','3d','modell','oggetto 3d','scena 3d','avatar 3d','polyhaven','hdri'])
+        subset = []
+        for t in TOOLS_SCHEMA:
+            n = t["function"]["name"]
+            if is_blender:
+                if n.startswith("blender_"):
+                    subset.append(t)
+            else:
+                if not n.startswith("blender_"):
+                    subset.append(t)
+        # Groq ha un limite pratico: tieni max ~24 tool
+        return subset[:24] if subset else TOOLS_SCHEMA[:24]
+
+    def _agentic_loop(self, messages, user_message, max_iters=4):
+        """Loop di tool-calling nativo Groq: il modello decide quali tool chiamare,
+        i risultati gli vengono rimandati, finché non produce una risposta finale.
+        Ritorna (testo_finale, lista_azioni_per_UI)."""
+        import json as _json
+        headers = {
+            "Authorization": f"Bearer {self.cfg['groq']['api_key']}",
+            "Content-Type": "application/json",
+        }
+        # Loop agentico → usa sempre il 70b (tool calling migliore, limiti più alti)
+        chosen_model = self.cfg["groq"]["model"]
+        tools = self._relevant_tools(user_message)
+        # Tool che producono un'immagine da mostrare in chat
+        IMG_TOOLS = {
+            "blender_render": "/api/image?file=blender_render.png",
+            "blender_screenshot": "/api/image?file=blender_viewport.png",
+            "blender_setup_avatar": "/api/image?file=blender_viewport.png",
+            "blender_create": "/api/image?file=blender_viewport.png",
+            "blender_execute": "/api/image?file=blender_viewport.png",
+        }
+        _NEEDS_SHOT = {"blender_create", "blender_setup_avatar", "blender_execute"}
+        msgs = list(messages)
+        actions = []
+        final_text = ""
+        for it in range(max_iters):
+            payload = {
+                "model": chosen_model,
+                "messages": msgs,
+                "temperature": float(self.cfg["groq"]["temperature"]),
+                "max_tokens": 2048,
+                "tools": tools,
+                "tool_choice": "auto",
+            }
+            # Chiamata con retry sul rate limit (429) — piano gratuito Groq
+            msg = None
+            for attempt in range(3):
+                try:
+                    resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=60)
+                    if resp.status_code == 429:
+                        import time as _t
+                        wait = 4 * (attempt + 1)
+                        print(f"  [Agentic] rate limit, retry tra {wait}s...")
+                        _t.sleep(wait)
+                        continue
+                    if not resp.ok:
+                        err = resp.json() if resp.headers.get('content-type','').startswith('application/json') else {}
+                        return f"[Errore Groq {resp.status_code}] {err.get('error',{}).get('message','')}", actions
+                    msg = resp.json()["choices"][0]["message"]
+                    break
+                except Exception as e:
+                    return f"[Errore connessione] {e}", actions
+            if msg is None:
+                # esauriti i retry: se abbiamo già fatto azioni, chiudiamo con successo parziale
+                return (final_text or "✅ Completato (rate limit Groq)"), actions
+
+            tool_calls = msg.get("tool_calls")
+            if not tool_calls:
+                # Nessun tool → risposta finale
+                final_text = (msg.get("content") or "").strip()
+                break
+
+            # Aggiungi il messaggio assistant con le tool_calls
+            msgs.append({"role": "assistant", "content": msg.get("content"), "tool_calls": tool_calls})
+            print(f"  [Agentic it{it+1}] {len(tool_calls)} tool: " + ", ".join(tc['function']['name'] for tc in tool_calls))
+
+            for tc in tool_calls:
+                fname = tc["function"]["name"]
+                try:
+                    fargs = _json.loads(tc["function"].get("arguments") or "{}")
+                except Exception:
+                    fargs = {}
+                tool_result = execute_tool(fname, fargs)
+                result_str = str(tool_result)
+                actions.append(f"{fname}: {result_str[:80]}")
+                # Se il tool produce un'immagine, mostrala + auto-focus per Blender
+                if fname in IMG_TOOLS:
+                    if fname in _NEEDS_SHOT:
+                        execute_tool("blender_focus_view", {})
+                        execute_tool("blender_screenshot", {"save_path": "/tmp/blender_viewport.png"})
+                    actions.append(f"IMAGE:{IMG_TOOLS[fname]}")
+                # Rimanda il risultato al modello
+                msgs.append({
+                    "role": "tool",
+                    "tool_call_id": tc.get("id", fname),
+                    "content": result_str[:2000],
+                })
+        else:
+            final_text = final_text or "✅ Completato (limite iterazioni raggiunto)"
+        return final_text, actions
+
+    def _legacy_complete(self, messages, payload, actions_done):
+        """[non usato] completion semplice senza tool — mantenuto per riferimento."""
         headers = {
             "Authorization": f"Bearer {self.cfg['groq']['api_key']}",
             "Content-Type": "application/json"
         }
-
-        chosen_model = _detect_complexity(user_message) or self.cfg["groq"]["model"]
-        payload = {
-            "model": chosen_model,
-            "messages": messages,
-            "temperature": float(self.cfg["groq"]["temperature"]),
-            "max_tokens": 2048,
-        }
-        if chosen_model == FAST_MODEL:
-            print(f"  [Tier] FAST ({FAST_MODEL})")
-        else:
-            print(f"  [Tier] DEEP ({chosen_model})")
-
         try:
             resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=45)
-            if not resp.ok:
-                err = resp.json() if resp.headers.get('content-type','').startswith('application/json') else {}
-                msg = err.get('error', {}).get('message', resp.text[:200])
-                print(f"[Groq {resp.status_code}] {msg}")
-                if self.cfg.get("ollama", {}).get("enabled", False):
-                    print("[INFO] Groq fallito, provo Ollama...")
-                    return self._ollama_chat(messages, payload), actions_done
-                return f"[Errore Groq {resp.status_code}] {msg}", actions_done
-
             data = resp.json()
             reply = data["choices"][0]["message"]["content"].strip()
-            self.history.append({"role": "assistant", "content": reply})
-            memory.log_conversation("assistant", reply)
             return reply, actions_done
-
         except Exception as e:
-            print(f"[Groq exception] {e}")
-            if self.cfg.get("ollama", {}).get("enabled", False):
-                print("[INFO] Groq fallito, provo Ollama...")
-                return self._ollama_chat(messages, payload), actions_done
-            return f"[Errore connessione] {e}", actions_done
+            return f"[Errore] {e}", actions_done
 
     def _ollama_chat(self, messages, payload):
         """Fallback locale con Ollama"""
