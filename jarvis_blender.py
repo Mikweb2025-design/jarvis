@@ -150,18 +150,35 @@ obj = bpy.data.objects.get('{object_name}')
 if obj:
     mat = bpy.data.materials.get('{mat_name}') or bpy.data.materials.new('{mat_name}')
     mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get('Principled BSDF')
-    if bsdf:
+    # Trova il nodo Principled BSDF per TIPO (robusto, indipendente dalla lingua/versione)
+    bsdf = None
+    for node in mat.node_tree.nodes:
+        if node.type == 'BSDF_PRINCIPLED':
+            bsdf = node
+            break
+    if bsdf is None:
+        bsdf = mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
+        out = None
+        for node in mat.node_tree.nodes:
+            if node.type == 'OUTPUT_MATERIAL':
+                out = node
+                break
+        if out:
+            mat.node_tree.links.new(bsdf.outputs[0], out.inputs[0])
+    # Imposta gli input per indice (Base Color=0, Metallic=1, Roughness=2 nei principled)
+    try:
         bsdf.inputs['Base Color'].default_value = ({r}, {g}, {b}, 1.0)
+    except: pass
+    try:
         bsdf.inputs['Metallic'].default_value = {metallic}
+    except: pass
+    try:
         bsdf.inputs['Roughness'].default_value = {roughness}
+    except: pass
     if obj.data.materials:
         obj.data.materials[0] = mat
     else:
         obj.data.materials.append(mat)
-    print("Materiale applicato a {object_name}")
-else:
-    print("Oggetto non trovato: {object_name}")
 """
     return blender_execute(code)
 
