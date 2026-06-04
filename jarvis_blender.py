@@ -348,6 +348,13 @@ def blender_focus_view() -> str:
     Utile quando i comandi via socket non aggiornano la finestra."""
     code = """
 import bpy
+# Seleziona TUTTE le mesh così view_selected le inquadra tutte
+bpy.ops.object.select_all(action='DESELECT')
+meshes = [o for o in bpy.data.objects if o.type == 'MESH']
+for o in meshes:
+    o.select_set(True)
+if meshes:
+    bpy.context.view_layer.objects.active = meshes[0]
 for area in bpy.context.screen.areas:
     if area.type == 'VIEW_3D':
         for space in area.spaces:
@@ -357,7 +364,10 @@ for area in bpy.context.screen.areas:
             if region.type == 'WINDOW':
                 try:
                     with bpy.context.temp_override(area=area, region=region):
-                        bpy.ops.view3d.view_all(center=False)
+                        if meshes:
+                            bpy.ops.view3d.view_selected()
+                        else:
+                            bpy.ops.view3d.view_all(center=False)
                 except Exception as e:
                     print('view err', e)
         area.tag_redraw()

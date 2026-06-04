@@ -103,6 +103,48 @@ class JarvisAgent:
         self.cfg = cfg
         self.history = []
 
+    def _blender_ai_code(self, request):
+        """Usa l'LLM per generare codice Python bpy che realizza la richiesta 3D.
+        Ritorna (codice, errore)."""
+        sys_prompt = (
+            "Sei un esperto di Blender Python API (bpy) per Blender 4.x e 5.x. "
+            "Genera SOLO codice Python eseguibile che realizza la richiesta dell'utente nella scena 3D.\n"
+            "REGOLE FERREE:\n"
+            "1. Output SOLO codice Python puro. NIENTE spiegazioni, NIENTE markdown, NIENTE ```.\n"
+            "2. Costruisci l'oggetto componendo primitive (cubi, sfere, cilindri, coni) con bpy.ops.mesh.primitive_*_add, posizionate e scalate.\n"
+            "3. Raggruppa le parti: alla fine seleziona tutte le parti create e uniscile con bpy.ops.object.join(), poi rinomina l'oggetto risultante in modo sensato.\n"
+            "4. Applica materiali colorati: crea bpy.data.materials.new(...), use_nodes=True, trova il nodo con node.type=='BSDF_PRINCIPLED' e imposta inputs['Base Color'].default_value=(r,g,b,1).\n"
+            "5. Tutto attorno all'origine (0,0,0), dimensioni 1-2 unità Blender.\n"
+            "6. NON cancellare oggetti esistenti (no select_all+delete) a meno che la richiesta lo chieda.\n"
+            "7. Il codice deve essere autosufficiente, deterministico e senza errori di sintassi.\n"
+            "8. Inizia sempre con 'import bpy' e 'import math' se servono.\n"
+        )
+        payload = {
+            "model": self.cfg["groq"]["model"],
+            "messages": [
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": f"Crea in Blender: {request}"},
+            ],
+            "temperature": 0.4,
+            "max_tokens": 1500,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.cfg['groq']['api_key']}",
+            "Content-Type": "application/json",
+        }
+        try:
+            resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=45)
+            if not resp.ok:
+                return None, f"Groq {resp.status_code}"
+            code = resp.json()["choices"][0]["message"]["content"].strip()
+            # Rimuovi eventuali fence markdown
+            import re as _re
+            code = _re.sub(r'^```[a-zA-Z]*\n?', '', code)
+            code = _re.sub(r'\n?```$', '', code).strip()
+            return code, None
+        except Exception as e:
+            return None, str(e)
+
     def _detect_direct_actions(self, user_message):
         """Rileva azioni dirette senza chiamare l'LLM"""
         from jarvis_tools import execute_tool
@@ -168,28 +210,34 @@ class JarvisAgent:
                 result = execute_tool('blender_delete', {'name': name})
                 actions_done.append(result)
 
-            # crea oggetto
-            elif any(w in lower for w in ['crea', 'aggiungi', 'inserisci', 'metti', 'add', 'nuovo']):
+            # crea / genera oggetto — LLM genera il codice bpy (qualsiasi cosa, non solo primitive)
+            elif any(w in lower for w in ['crea', 'aggiungi', 'inserisci', 'metti', 'add', 'nuovo',
+                                          'fai', 'fammi', 'genera', 'costruisci', 'disegna', 'modella',
+                                          'build', 'make']):
+                import os
+                # Estrai la descrizione: tutto dopo il verbo, rimuovendo "in/su blender"
+                req = re.sub(r'\b(in|su|con|usando)\s+blender\b', '', user_message, flags=re.IGNORECASE)
+                req = re.sub(r'^\s*(crea(?:mi)?|aggiungi|inserisci|metti|fai|fammi|genera(?:mi)?|costruisci(?:mi)?|disegna(?:mi)?|modella|build|make|add)\s+', '', req, flags=re.IGNORECASE).strip()
+                if not req:
+                    req = user_message
+                # Primitive semplici → via diretta veloce (nessun LLM)
                 _types = {'cubo':'cube','cube':'cube','sfera':'sphere','sphere':'sphere',
                           'cilindro':'cylinder','piano':'plane','toro':'torus',
-                          'monkey':'monkey','suzanne':'monkey','luce':'light',
-                          'camera':'camera','cono':'cone'}
-                found_type = next((v for k,v in _types.items() if k in lower), 'cube')
-                nm = re.search(r'(?:chiamalo?|nome|chiama(?:la)?)\s+"?([^"]+)"?', lower)
-                name = nm.group(1).strip() if nm else None
-                _colors = {'rosso':[1,0,0],'blu':[0,0.3,1],'verde':[0,0.8,0],
-                           'giallo':[1,1,0],'bianco':[1,1,1],'nero':[0,0,0],
-                           'arancione':[1,0.4,0],'viola':[0.6,0,1],'ciano':[0,1,1],
-                           'rosa':[1,0.4,0.7],'grigio':[0.5,0.5,0.5]}
-                color = next((v for k,v in _colors.items() if k in lower), None)
-                args = {'object_type': found_type}
-                if name: args['name'] = name
-                result = execute_tool('blender_create', args)
-                if color and name:
-                    execute_tool('blender_material', {'object_name': name, 'color': color})
+                          'monkey':'monkey','suzanne':'monkey','cono':'cone'}
+                simple = next((v for k,v in _types.items() if k in lower and len(req.split())<=4), None)
+                if simple:
+                    execute_tool('blender_create', {'object_type': simple})
+                    result = f"✅ {simple} creato"
+                else:
+                    # Richiesta creativa → LLM genera codice bpy → eseguo via MCP
+                    code, err = self._blender_ai_code(req)
+                    if err or not code:
+                        result = f"❌ Generazione codice fallita: {err or 'vuoto'}"
+                    else:
+                        result = execute_tool('blender_execute', {'code': code})
+                        result = f"✅ Generato '{req}' in Blender via codice AI"
                 actions_done.append(result)
-                # Inquadra la vista e mostra screenshot in chat così l'utente VEDE
-                import os
+                # Inquadra + screenshot in chat
                 execute_tool('blender_focus_view', {})
                 execute_tool('blender_screenshot', {'save_path': '/tmp/blender_viewport.png'})
                 if os.path.exists('/tmp/blender_viewport.png'):
