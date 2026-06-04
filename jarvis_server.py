@@ -395,6 +395,20 @@ class H(BaseHTTPRequestHandler):
                 else:
                     self._json(404, {"error": "waiting video not found"})
 
+            elif self.path.startswith("/assets/avatar.glb"):
+                p = Path(__file__).parent / "assets" / "avatar.glb"
+                if p.exists():
+                    b = p.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "model/gltf-binary")
+                    self.send_header("Content-Length", str(len(b)))
+                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(b)
+                else:
+                    self._json(404, {"error": "avatar.glb not found"})
+
             elif self.path=="/api/status":
                 self._json(200,{"status":"online","model":cfg["groq"]["model"],
                     "voice":cfg["tts"].get("qwen3_voice", cfg["tts"].get("voice", "vivian")),"version":"9.0",

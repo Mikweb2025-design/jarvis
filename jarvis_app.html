@@ -6,6 +6,14 @@
 <title>J.A.R.V.I.S — CYBERPUNK HUD v9.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -366,11 +374,14 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 #avatar-widget::after{content:'';position:absolute;inset:0;z-index:1;
   box-shadow:inset 0 0 40px rgba(0,240,255,0.04),inset 0 0 4px rgba(0,240,255,0.06);
   pointer-events:none}
-#holo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;z-index:3;opacity:0;transition:opacity 0.5s}
-#widget-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none;opacity:1;transition:opacity 0.6s}
-#avatar-widget.waiting-video #holo-video{opacity:0.7}
-#avatar-widget.video-active #widget-canvas{opacity:0}
-#avatar-widget.video-active #holo-video{opacity:1}
+#avatar3d-canvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block;z-index:3;opacity:0;transition:opacity 0.6s}
+#avatar3d-canvas.ready{opacity:1}
+#avatar3d-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:4;
+  font-family:var(--fd);font-size:11px;letter-spacing:0.25em;color:var(--cy);
+  text-shadow:0 0 12px var(--cyg);opacity:0.8;transition:opacity 0.5s;pointer-events:none}
+#avatar3d-canvas.ready ~ #avatar3d-loading{opacity:0}
+#widget-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none;opacity:0.6;transition:opacity 0.6s}
+#avatar-widget.video-active #widget-canvas{opacity:0.35}
 #avatar-widget.speaking{width:620px;height:620px;border-radius:16px;
   box-shadow:0 0 100px rgba(0,240,255,0.3),inset 0 0 160px rgba(0,240,255,0.08)}
 
@@ -683,7 +694,8 @@ html.theme-crystal #holo-canvas{opacity:0.55}
     <!-- Avatar widget flottante (sopra chat) -->
     <div id="avatar-widget">
       <canvas id="widget-canvas"></canvas>
-      <video id="holo-video" playsinline></video>
+      <canvas id="avatar3d-canvas"></canvas>
+      <div id="avatar3d-loading">CARICANDO MODELLO 3D...</div>
     </div>
 
     <div id="mouth-debug" style="display:none"></div>
@@ -1345,17 +1357,10 @@ function spawnParticles(theme){
 // ── HOLO STATE ──
 var widgetFloatTimer=null;
 function playWaitingVideo(){
-  var vd=document.getElementById('holo-video');
-  if(!vd)return;
-  vd.onended=null;
-  vd.muted=false;vd.loop=true;vd.autoplay=true;
-  vd.src='/waiting_neurons.mp4';
-  vd.play().catch(function(e){log('waiting play: '+e.message)});
+  if(window.Avatar3D)window.Avatar3D.setState('thinking');
 }
 function stopWaitingVideo(){
-  var vd=document.getElementById('holo-video');
-  if(!vd)return;
-  vd.pause();vd.autoplay=false;vd.loop=false;vd.muted=true;vd.src='';
+  if(window.Avatar3D)window.Avatar3D.setState('idle');
 }
 function setHoloState(state){
   holoState=state;
@@ -1367,16 +1372,16 @@ function setHoloState(state){
     if(reactor)reactor.style.opacity='0.6';
     if(core){core.style.background='var(--am)';core.style.boxShadow='0 0 20px var(--amg),0 0 60px rgba(255,170,0,0.4)'}
     if(status){status.textContent='◉ PROCESSING...';status.className='thinking'}
-    if(wg){wg.style.borderColor='rgba(255,170,0,0.3)';wg.style.boxShadow='0 0 20px rgba(255,170,0,0.12),inset 0 0 30px rgba(255,170,0,0.03)';wg.classList.add('waiting-video')}
+    if(wg){wg.style.borderColor='rgba(255,170,0,0.3)';wg.style.boxShadow='0 0 20px rgba(255,170,0,0.12),inset 0 0 30px rgba(255,170,0,0.03)'}
     holoMouthOpen=0.2;holoEyeScan=0.6;
-    playWaitingVideo();
+    if(window.Avatar3D)window.Avatar3D.setState('thinking');
   }else if(state==='speaking'){
     if(reactor)reactor.style.opacity='0.5';
     if(core){core.style.background='var(--cy)';core.style.boxShadow='0 0 20px var(--cyg),0 0 60px rgba(0,240,255,0.4)'}
     if(status){status.textContent='◉ SPEAKING...';status.className='speaking'}
-    if(wg){wg.style.borderColor='rgba(0,240,255,0.4)';wg.style.boxShadow='0 0 30px rgba(0,240,255,0.15),inset 0 0 40px rgba(0,240,255,0.04)';wg.classList.add('waiting-video')}
+    if(wg){wg.style.borderColor='rgba(0,240,255,0.4)';wg.style.boxShadow='0 0 30px rgba(0,240,255,0.15),inset 0 0 40px rgba(0,240,255,0.04)'}
     holoMouthOpen=1;holoEyeScan=0.3;
-    if(!mouthAnim){var t=0;mouthAnim=setInterval(function(){t+=0.15;holoMouthOpen=0.3+0.7*(0.5+0.5*Math.sin(t))},50)}
+    if(window.Avatar3D)window.Avatar3D.setState('speaking');
     if(wg&&!widgetFloatTimer){
       widgetFloat(wg);
     }
@@ -1384,11 +1389,11 @@ function setHoloState(state){
     if(reactor)reactor.style.opacity='var(--reactor-bg,0.35)';
     if(core){core.style.background='var(--cy)';core.style.boxShadow='0 0 20px var(--cyg),0 0 60px rgba(0,240,255,0.2)'}
     if(status){status.textContent='◆ SYSTEM STANDBY ◆';status.className='idle'}
-    if(wg){wg.style.borderColor='rgba(0,240,255,0.2)';wg.style.boxShadow='0 0 20px rgba(0,240,255,0.08),inset 0 0 30px rgba(0,240,255,0.02)';wg.classList.remove('waiting-video');resetWidgetPos(wg)}
+    if(wg){wg.style.borderColor='rgba(0,240,255,0.2)';wg.style.boxShadow='0 0 20px rgba(0,240,255,0.08),inset 0 0 30px rgba(0,240,255,0.02)';resetWidgetPos(wg)}
     holoMouthOpen=0;holoEyeScan=0;
     if(mouthAnim){clearInterval(mouthAnim);mouthAnim=null}
     if(widgetFloatTimer){clearInterval(widgetFloatTimer);widgetFloatTimer=null}
-    stopWaitingVideo();
+    if(window.Avatar3D)window.Avatar3D.setState('idle');
   }
 }
 
@@ -1611,38 +1616,26 @@ async function speak(text){
   if(!text||!srvOnline)return;
   var clean=text.replace(/\*\*(.+?)\*\*/g,'$1').replace(/\*(.+?)\*/g,'$1').replace(/<[^>]+>/g,'').replace(/#{1,6}\s*/g,'').replace(/`([^`]+)`/g,'$1').trim();
   if(!clean)return;
-  if(spkbar)spkbar.innerHTML='<div class="wave"><span></span><span></span><span></span><span></span><span></span></div> GENERATING VIDEO...';
-  // Show avatar widget in speaking mode
-  var wg=document.getElementById('avatar-widget'),vd=document.getElementById('holo-video');
+  var wg=document.getElementById('avatar-widget');
   if(wg)wg.classList.add('speaking');
-  try{
-    var r=await fetch(SRV+'/api/wav2lip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,voice:currentVoice,language:currentLang})});
-    if(r.ok){
-      var blob=await r.blob(),url=URL.createObjectURL(blob);
-      setHoloState('speaking');
-      if(vd){
-        vd.src=url;vd.muted=false;vd.loop=false;vd.play();
-        toggleWidgetVideo(true);
-        vd.onended=function(){vd.src='';URL.revokeObjectURL(url);toggleWidgetVideo(false);if(wg)wg.classList.remove('speaking');setHoloState('idle')};
-      }
-      if(spkbar)spkbar.innerHTML='<div class="wave"><span></span><span></span><span></span><span></span><span></span></div> SPEAKING';
-      return;
-    } else {
-      if(wg)wg.classList.remove('speaking');
-    }
-  }catch(e){log('wav2lip: '+e.message);if(wg)wg.classList.remove('speaking')}
-  // Fallback: audio-only TTS
-  if(spkbar)spkbar.innerHTML='<div class="wave"><span></span><span></span><span></span><span></span><span></span></div> SPEAKING';
-  setHoloState('speaking');
+  if(spkbar)spkbar.innerHTML='<div class="wave"><span></span><span></span><span></span><span></span><span></span></div> SYNTHESIZING...';
   try{
     var r=await fetch(SRV+'/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,voice:currentVoice,language:currentLang})});
     if(!r.ok)throw new Error('HTTP '+r.status);
-    var blob=await r.blob();var url=URL.createObjectURL(blob);
+    var blob=await r.blob();
+    if(spkbar)spkbar.innerHTML='<div class="wave"><span></span><span></span><span></span><span></span><span></span></div> SPEAKING';
+    setHoloState('speaking');
+    var done=function(){if(spkbar)spkbar.innerHTML='';if(wg)wg.classList.remove('speaking');setHoloState('idle')};
+    if(window.Avatar3D){
+      try{ await window.Avatar3D.speak(blob,done); return; }
+      catch(e){ log('avatar3d.speak: '+e.message) }
+    }
+    var url=URL.createObjectURL(blob);
     var audio=new Audio(url);
-    audio.onended=function(){URL.revokeObjectURL(url);if(spkbar)spkbar.innerHTML='';setHoloState('idle')};
-    audio.onerror=function(){if(spkbar)spkbar.innerHTML='';setHoloState('idle')};
-    audio.play().catch(function(){if(spkbar)spkbar.innerHTML='';setHoloState('idle')});
-  }catch(e){if(spkbar)spkbar.innerHTML='';log('tts: '+e.message);setHoloState('idle')}
+    audio.onended=function(){URL.revokeObjectURL(url);done()};
+    audio.onerror=function(){URL.revokeObjectURL(url);done()};
+    audio.play().catch(done);
+  }catch(e){if(spkbar)spkbar.innerHTML='';if(wg)wg.classList.remove('speaking');log('tts: '+e.message);setHoloState('idle')}
 }
 
 function send(){
@@ -1767,6 +1760,286 @@ window.addEventListener('DOMContentLoaded',function(){
   initHoloCanvas();
   initWidgetCanvas();
 });
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const VISEMES = ['viseme_sil','viseme_PP','viseme_FF','viseme_TH','viseme_DD','viseme_kk','viseme_CH','viseme_SS','viseme_nn','viseme_RR','viseme_aa','viseme_E','viseme_I','viseme_O','viseme_U'];
+const HOLO_COLOR = new THREE.Color(0x4ad8ff);
+const RIM_COLOR  = new THREE.Color(0x00f0ff);
+
+let renderer, scene, camera, clock, mixer, idleAction;
+let avatarRoot=null, faceMesh=null, teethMesh=null, headBone=null;
+let morphDict=null;
+let audioCtx=null, analyser=null, freqData=null, timeData=null;
+let currentSource=null, currentEndCb=null;
+let state='idle';
+let smoothJaw=0, smoothA=0, smoothO=0, smoothE=0;
+let blinkT=0, nextBlinkAt=2+Math.random()*3;
+let headSwayT=0;
+
+function initThree(){
+  const canvas = document.getElementById('avatar3d-canvas');
+  if(!canvas) return false;
+  renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  resize();
+
+  scene = new THREE.Scene();
+  scene.background = null;
+
+  camera = new THREE.PerspectiveCamera(22, 1, 0.05, 50);
+  camera.position.set(0, 1.62, 0.85);
+  camera.lookAt(0, 1.62, 0);
+
+  const amb = new THREE.AmbientLight(0x224466, 0.55);
+  scene.add(amb);
+  const key = new THREE.DirectionalLight(0x88c8ff, 1.1);
+  key.position.set(0.5, 2.0, 1.2); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x00f0ff, 0.9);
+  rim.position.set(-1.2, 1.5, -0.8); scene.add(rim);
+  const fill = new THREE.PointLight(0xff00aa, 0.35, 4);
+  fill.position.set(0.8, 1.4, 0.6); scene.add(fill);
+
+  clock = new THREE.Clock();
+  loadAvatar();
+  window.addEventListener('resize', resize);
+  renderer.setAnimationLoop(tick);
+  return true;
+}
+
+function resize(){
+  if(!renderer) return;
+  const canvas = renderer.domElement;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(2, rect.width|0), h = Math.max(2, rect.height|0);
+  renderer.setSize(w, h, false);
+  if(camera){ camera.aspect = w/h; camera.updateProjectionMatrix(); }
+}
+
+function loadAvatar(){
+  const loader = new GLTFLoader();
+  const glbUrl = (window.SRV||'') + '/assets/avatar.glb';
+  loader.load(glbUrl, (gltf)=>{
+    avatarRoot = gltf.scene;
+    avatarRoot.traverse((o)=>{
+      if(o.isMesh){
+        applyHoloMaterial(o);
+        if(o.morphTargetDictionary && o.morphTargetInfluences){
+          // Wolf3D_Avatar carries the 72 morph targets
+          if(o.morphTargetDictionary.jawOpen!==undefined){
+            faceMesh = o;
+            morphDict = o.morphTargetDictionary;
+          } else if(!teethMesh && /teeth|wolf3d_teeth/i.test(o.name)){
+            teethMesh = o;
+          }
+        }
+        if(o.name && /teeth/i.test(o.name)) teethMesh = o;
+      }
+      if(o.isBone && /head/i.test(o.name) && !headBone) headBone = o;
+    });
+    avatarRoot.position.set(0, 0, 0);
+    avatarRoot.rotation.set(0, 0, 0);
+    scene.add(avatarRoot);
+
+    if(gltf.animations && gltf.animations.length){
+      mixer = new THREE.AnimationMixer(avatarRoot);
+      const idleClip = gltf.animations.find(a=>/idle|breath/i.test(a.name)) || gltf.animations[0];
+      idleAction = mixer.clipAction(idleClip);
+      idleAction.setLoop(THREE.LoopRepeat, Infinity);
+      idleAction.timeScale = 0.7;
+      idleAction.play();
+    }
+
+    const cnv = document.getElementById('avatar3d-canvas');
+    if(cnv) cnv.classList.add('ready');
+    const lo = document.getElementById('avatar3d-loading');
+    if(lo) lo.style.display='none';
+  }, undefined, (err)=>{
+    console.error('GLB load error', err);
+    const lo = document.getElementById('avatar3d-loading');
+    if(lo) lo.textContent='ERRORE CARICAMENTO MODELLO';
+  });
+}
+
+function applyHoloMaterial(mesh){
+  const src = mesh.material;
+  const mats = Array.isArray(src) ? src : [src];
+  const mapped = mats.map((m)=>{
+    if(!m) return m;
+    const isFace = /wolf3d_avatar|head|face/i.test(mesh.name||'') || (m.morphTargets);
+    const mat = new THREE.MeshStandardMaterial({
+      map: m.map || null,
+      normalMap: m.normalMap || null,
+      color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
+      roughness: 0.45,
+      metalness: 0.15,
+      emissive: HOLO_COLOR.clone().multiplyScalar(isFace?0.18:0.12),
+      emissiveMap: m.map || null,
+      emissiveIntensity: isFace?0.55:0.35,
+      transparent: true,
+      opacity: isFace?0.95:0.88,
+    });
+    mat.morphTargets = true;
+    mat.morphNormals = true;
+    return mat;
+  });
+  mesh.material = Array.isArray(src) ? mapped : mapped[0];
+  mesh.frustumCulled = false;
+}
+
+function setMorph(name, value){
+  if(!faceMesh || !morphDict) return;
+  const i = morphDict[name];
+  if(i===undefined) return;
+  faceMesh.morphTargetInfluences[i] = value;
+  if(teethMesh && teethMesh.morphTargetDictionary){
+    const j = teethMesh.morphTargetDictionary[name];
+    if(j!==undefined) teethMesh.morphTargetInfluences[j] = value;
+  }
+}
+
+function clearMouthMorphs(){
+  if(!faceMesh) return;
+  const keys = ['jawOpen','mouthOpen','mouthFunnel','mouthPucker','mouthClose'];
+  keys.concat(VISEMES).forEach(k=>setMorph(k,0));
+}
+
+function tick(){
+  const dt = clock ? clock.getDelta() : 0.016;
+  if(mixer) mixer.update(dt);
+
+  // Auto blink
+  blinkT += dt;
+  if(faceMesh && morphDict){
+    if(blinkT >= nextBlinkAt){
+      const phase = blinkT - nextBlinkAt;
+      const v = phase < 0.07 ? phase/0.07 : (phase < 0.14 ? 1-(phase-0.07)/0.07 : 0);
+      setMorph('eyeBlinkLeft', v);
+      setMorph('eyeBlinkRight', v);
+      if(phase > 0.14){ blinkT = 0; nextBlinkAt = 2+Math.random()*3.5; }
+    }
+  }
+
+  // Head sway
+  if(headBone){
+    headSwayT += dt;
+    const intensity = state==='speaking' ? 0.06 : (state==='thinking' ? 0.04 : 0.025);
+    headBone.rotation.y = Math.sin(headSwayT*0.6)*intensity;
+    headBone.rotation.x = Math.sin(headSwayT*0.42)*intensity*0.4;
+  }
+
+  // Lip-sync from audio analyser
+  if(state==='speaking' && analyser && faceMesh && morphDict){
+    analyser.getByteTimeDomainData(timeData);
+    let sum=0;
+    for(let i=0;i<timeData.length;i++){ const v=(timeData[i]-128)/128; sum += v*v; }
+    const rms = Math.sqrt(sum/timeData.length);
+    const target = Math.min(1, rms*4.2);
+    smoothJaw += (target - smoothJaw) * Math.min(1, dt*22);
+
+    analyser.getByteFrequencyData(freqData);
+    let lo=0, mid=0, hi=0;
+    const N = freqData.length;
+    const a = Math.floor(N*0.04), b = Math.floor(N*0.18), c = Math.floor(N*0.55);
+    for(let i=a;i<b;i++) lo += freqData[i];
+    for(let i=b;i<c;i++) mid += freqData[i];
+    for(let i=c;i<N;i++) hi += freqData[i];
+    const tot = lo+mid+hi+1;
+    const fLo = lo/tot, fMid = mid/tot, fHi = hi/tot;
+    const tgtA = smoothJaw * (0.55 + 0.45*fMid);
+    const tgtO = smoothJaw * (0.55 + 0.45*fLo);
+    const tgtE = smoothJaw * (0.55 + 0.45*fHi);
+    smoothA += (tgtA - smoothA) * Math.min(1, dt*18);
+    smoothO += (tgtO - smoothO) * Math.min(1, dt*18);
+    smoothE += (tgtE - smoothE) * Math.min(1, dt*18);
+
+    setMorph('jawOpen', smoothJaw*0.85);
+    setMorph('mouthOpen', smoothJaw*0.55);
+    setMorph('viseme_aa', smoothA*0.75);
+    setMorph('viseme_O',  smoothO*0.55);
+    setMorph('viseme_E',  smoothE*0.55);
+    setMorph('viseme_I',  smoothE*0.35);
+    setMorph('viseme_U',  smoothO*0.30);
+  } else if(faceMesh){
+    smoothJaw += (0 - smoothJaw) * Math.min(1, dt*12);
+    smoothA += (0 - smoothA) * Math.min(1, dt*12);
+    smoothO += (0 - smoothO) * Math.min(1, dt*12);
+    smoothE += (0 - smoothE) * Math.min(1, dt*12);
+    if(state==='thinking'){
+      const p = 0.05 + 0.04*Math.sin(performance.now()*0.004);
+      setMorph('mouthPucker', p);
+      setMorph('jawOpen', 0); setMorph('viseme_aa', 0);
+    } else {
+      setMorph('mouthPucker', 0);
+      setMorph('jawOpen', smoothJaw*0.8);
+      setMorph('viseme_aa', smoothA*0.7);
+      setMorph('viseme_O', smoothO*0.5);
+      setMorph('viseme_E', smoothE*0.5);
+    }
+  }
+
+  if(renderer && scene && camera) renderer.render(scene, camera);
+}
+
+async function speakBlob(blob, onEnd){
+  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended') await audioCtx.resume();
+  stopCurrentAudio();
+
+  const arr = await blob.arrayBuffer();
+  const buf = await audioCtx.decodeAudioData(arr.slice(0));
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  if(!analyser){
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.5;
+    timeData = new Uint8Array(analyser.fftSize);
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+  }
+  src.connect(analyser);
+  analyser.connect(audioCtx.destination);
+  currentSource = src;
+  currentEndCb = onEnd || null;
+  state = 'speaking';
+  src.onended = ()=>{
+    if(currentSource===src){
+      currentSource=null;
+      state='idle';
+      clearMouthMorphs();
+      const cb = currentEndCb; currentEndCb = null;
+      if(cb) try{cb()}catch(e){}
+    }
+  };
+  src.start(0);
+}
+
+function stopCurrentAudio(){
+  if(currentSource){
+    try{ currentSource.onended=null; currentSource.stop(0); }catch(e){}
+    currentSource=null;
+  }
+  currentEndCb=null;
+  clearMouthMorphs();
+}
+
+window.Avatar3D = {
+  setState(s){
+    if(s==='speaking' || s==='thinking' || s==='idle') state = s;
+    if(s==='idle') clearMouthMorphs();
+  },
+  speak(blob, onEnd){ return speakBlob(blob, onEnd); },
+  stop(){ stopCurrentAudio(); state='idle'; }
+};
+
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', initThree);
+}else{
+  initThree();
+}
 </script>
 </body>
 </html>
