@@ -1229,6 +1229,7 @@ function resizeWidgetCanvas(){
 
 function renderWidget(time){
   if(!widgetCtx||!widgetCanvas){widgetAnimId=requestAnimationFrame(renderWidget);return}
+  try{
   widgetTime=time||performance.now();
   var ctx=widgetCtx,w=widgetCanvas.width,h=widgetCanvas.height;
   ctx.clearRect(0,0,w,h);
@@ -1266,6 +1267,7 @@ function renderWidget(time){
   });
 
   ctx.globalAlpha=1;ctx.shadowBlur=0;
+  }catch(e){/* canvas error non-fatale: continua il loop */}
   widgetAnimId=requestAnimationFrame(renderWidget);
 }
 
@@ -1297,7 +1299,7 @@ function drawIdlePhoto(ctx,w,h,cx,cy,t,color){
   for(var i=0;i<2;i++){
     ctx.strokeStyle=color;ctx.globalAlpha=(0.06+0.04*Math.sin(t*0.5+i*2))*(1-i*0.3);
     ctx.lineWidth=0.5;ctx.shadowColor=color;ctx.shadowBlur=8;
-    var ringR=Math.min(w,h)*(0.28+0.08*i+4*Math.sin(t*0.4+i));
+    var ringR=Math.max(1,Math.min(w,h)*(0.28+0.08*i+0.04*Math.sin(t*0.4+i)));
     ctx.beginPath();ctx.arc(cx+dx,cy+dy,ringR,0,Math.PI*2);ctx.stroke();
   }
   ctx.shadowBlur=0;
