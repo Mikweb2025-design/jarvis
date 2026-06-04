@@ -402,7 +402,7 @@ class H(BaseHTTPRequestHandler):
                     self.send_response(200)
                     self.send_header("Content-Type", "model/gltf-binary")
                     self.send_header("Content-Length", str(len(b)))
-                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
                     self._cors()
                     self.end_headers()
                     self.wfile.write(b)

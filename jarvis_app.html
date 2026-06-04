@@ -374,14 +374,15 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 #avatar-widget::after{content:'';position:absolute;inset:0;z-index:1;
   box-shadow:inset 0 0 40px rgba(0,240,255,0.04),inset 0 0 4px rgba(0,240,255,0.06);
   pointer-events:none}
-#avatar3d-canvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block;z-index:3;opacity:0;transition:opacity 0.6s}
+#avatar3d-canvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block;z-index:5;opacity:0;transition:opacity 0.6s;background:transparent}
 #avatar3d-canvas.ready{opacity:1}
-#avatar3d-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:4;
-  font-family:var(--fd);font-size:11px;letter-spacing:0.25em;color:var(--cy);
-  text-shadow:0 0 12px var(--cyg);opacity:0.8;transition:opacity 0.5s;pointer-events:none}
-#avatar3d-canvas.ready ~ #avatar3d-loading{opacity:0}
-#widget-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none;opacity:0.6;transition:opacity 0.6s}
-#avatar-widget.video-active #widget-canvas{opacity:0.35}
+#avatar3d-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:6;
+  font-family:var(--fd);font-size:10px;line-height:1.5;letter-spacing:0.18em;color:var(--cy);
+  text-shadow:0 0 12px var(--cyg);opacity:0.85;transition:opacity 0.5s;pointer-events:none;
+  text-align:center;max-width:90%;white-space:pre-wrap;word-break:break-word}
+#avatar3d-canvas.ready ~ #avatar3d-loading{opacity:0;visibility:hidden}
+#widget-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none;opacity:0.35;transition:opacity 0.6s}
+#avatar-widget.has-3d #widget-canvas{display:none}
 #avatar-widget.speaking{width:620px;height:620px;border-radius:16px;
   box-shadow:0 0 100px rgba(0,240,255,0.3),inset 0 0 160px rgba(0,240,255,0.08)}
 
@@ -1773,39 +1774,63 @@ const RIM_COLOR  = new THREE.Color(0x00f0ff);
 let renderer, scene, camera, clock, mixer, idleAction;
 let avatarRoot=null, faceMesh=null, teethMesh=null, headBone=null;
 let morphDict=null;
+let morphMeshes=[]; // every mesh that carries face/viseme morph targets
 let audioCtx=null, analyser=null, freqData=null, timeData=null;
 let currentSource=null, currentEndCb=null;
 let state='idle';
 let smoothJaw=0, smoothA=0, smoothO=0, smoothE=0;
 let blinkT=0, nextBlinkAt=2+Math.random()*3;
 let headSwayT=0;
+let camStartTarget=null;
+
+function showLoading(msg){
+  const lo = document.getElementById('avatar3d-loading');
+  if(lo){ lo.textContent = msg; }
+}
+function showError(msg){
+  const lo = document.getElementById('avatar3d-loading');
+  if(lo){ lo.textContent = msg; lo.style.color='#ff5577'; lo.style.textShadow='0 0 12px rgba(255,85,119,0.7)'; lo.style.opacity='1'; lo.style.visibility='visible'; }
+  console.error('[Avatar3D]', msg);
+}
+window.addEventListener('error', (e)=>{ showError('ERR: '+(e.message||e.error||'unknown')) });
+window.addEventListener('unhandledrejection', (e)=>{ showError('PROMISE: '+(e.reason&&e.reason.message||e.reason||'unknown')) });
 
 function initThree(){
   const canvas = document.getElementById('avatar3d-canvas');
-  if(!canvas) return false;
-  renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  if(!canvas){ showError('canvas non trovato'); return false; }
+  try{
+    renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true, premultipliedAlpha:false});
+  }catch(e){ showError('WebGL init fail: '+e.message); return false; }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   resize();
 
   scene = new THREE.Scene();
   scene.background = null;
 
-  camera = new THREE.PerspectiveCamera(22, 1, 0.05, 50);
-  camera.position.set(0, 1.62, 0.85);
-  camera.lookAt(0, 1.62, 0);
+  camera = new THREE.PerspectiveCamera(28, 1, 0.05, 50);
+  camera.position.set(0, 1.55, 0.9);
+  camera.lookAt(0, 1.55, 0);
 
-  const amb = new THREE.AmbientLight(0x224466, 0.55);
+  const amb = new THREE.AmbientLight(0xffffff, 0.7);
   scene.add(amb);
-  const key = new THREE.DirectionalLight(0x88c8ff, 1.1);
-  key.position.set(0.5, 2.0, 1.2); scene.add(key);
-  const rim = new THREE.DirectionalLight(0x00f0ff, 0.9);
-  rim.position.set(-1.2, 1.5, -0.8); scene.add(rim);
-  const fill = new THREE.PointLight(0xff00aa, 0.35, 4);
-  fill.position.set(0.8, 1.4, 0.6); scene.add(fill);
+  const key = new THREE.DirectionalLight(0xffffff, 1.4);
+  key.position.set(0.6, 2.2, 1.6); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x00f0ff, 1.1);
+  rim.position.set(-1.4, 1.6, -1.0); scene.add(rim);
+  const fill = new THREE.PointLight(0xff00aa, 0.45, 5);
+  fill.position.set(0.9, 1.5, 0.8); scene.add(fill);
 
   clock = new THREE.Clock();
+  showLoading('CARICANDO MODELLO 3D...');
   loadAvatar();
   window.addEventListener('resize', resize);
+  try{
+    const ro = new ResizeObserver(()=>resize());
+    ro.observe(canvas.parentElement || canvas);
+  }catch(e){}
+  setTimeout(resize, 100);
+  setTimeout(resize, 500);
   renderer.setAnimationLoop(tick);
   return true;
 }
@@ -1821,83 +1846,98 @@ function resize(){
 
 function loadAvatar(){
   const loader = new GLTFLoader();
-  const glbUrl = (window.SRV||'') + '/assets/avatar.glb';
+  const glbUrl = (window.SRV||'') + '/assets/avatar.glb?v=' + Date.now();
+  showLoading('CARICANDO MODELLO 3D... 0%');
   loader.load(glbUrl, (gltf)=>{
-    avatarRoot = gltf.scene;
-    avatarRoot.traverse((o)=>{
-      if(o.isMesh){
-        applyHoloMaterial(o);
-        if(o.morphTargetDictionary && o.morphTargetInfluences){
-          // Wolf3D_Avatar carries the 72 morph targets
-          if(o.morphTargetDictionary.jawOpen!==undefined){
-            faceMesh = o;
-            morphDict = o.morphTargetDictionary;
-          } else if(!teethMesh && /teeth|wolf3d_teeth/i.test(o.name)){
-            teethMesh = o;
+    try{
+      avatarRoot = gltf.scene;
+      const meshes = [];
+      morphMeshes = [];
+      avatarRoot.traverse((o)=>{
+        if(o.isMesh || o.isSkinnedMesh){
+          meshes.push(o);
+          applyHoloTint(o);
+          if(o.morphTargetDictionary && o.morphTargetInfluences && o.morphTargetDictionary.jawOpen!==undefined){
+            morphMeshes.push(o);
+            // Prefer the head mesh as primary reference for the morph dict
+            if(/head/i.test(o.name||'') || !faceMesh){ faceMesh = o; morphDict = o.morphTargetDictionary; }
+            if(/teeth/i.test(o.name||'')) teethMesh = o;
           }
+          o.frustumCulled = false;
         }
-        if(o.name && /teeth/i.test(o.name)) teethMesh = o;
+        if(o.isBone && /^head$|head/i.test(o.name||'') && !headBone) headBone = o;
+      });
+
+      scene.add(avatarRoot);
+      avatarRoot.updateMatrixWorld(true);
+
+      // Aim the camera at the head bone (robust for skinned half-body avatars).
+      const target = new THREE.Vector3(0, 1.6, 0);
+      if(headBone){
+        headBone.getWorldPosition(target);
+        target.y += 0.08; // head bone sits ~jaw level -> nudge up to center the face
+      } else {
+        const box = new THREE.Box3().setFromObject(avatarRoot);
+        target.set((box.min.x+box.max.x)/2, box.max.y - (box.max.y-box.min.y)*0.08, (box.min.z+box.max.z)/2);
       }
-      if(o.isBone && /head/i.test(o.name) && !headBone) headBone = o;
-    });
-    avatarRoot.position.set(0, 0, 0);
-    avatarRoot.rotation.set(0, 0, 0);
-    scene.add(avatarRoot);
+      camStartTarget = target.clone();
+      // Head-and-shoulders bust framing, camera in front (+Z) of the face.
+      camera.position.set(target.x, target.y + 0.02, target.z + 0.72);
+      camera.lookAt(target.x, target.y, target.z);
+      camera.near = 0.01; camera.far = 50; camera.updateProjectionMatrix();
 
-    if(gltf.animations && gltf.animations.length){
-      mixer = new THREE.AnimationMixer(avatarRoot);
-      const idleClip = gltf.animations.find(a=>/idle|breath/i.test(a.name)) || gltf.animations[0];
-      idleAction = mixer.clipAction(idleClip);
-      idleAction.setLoop(THREE.LoopRepeat, Infinity);
-      idleAction.timeScale = 0.7;
-      idleAction.play();
+      if(gltf.animations && gltf.animations.length){
+        mixer = new THREE.AnimationMixer(avatarRoot);
+        const idleClip = gltf.animations.find(a=>/idle|breath/i.test(a.name||'')) || gltf.animations[0];
+        idleAction = mixer.clipAction(idleClip);
+        idleAction.setLoop(THREE.LoopRepeat, Infinity);
+        idleAction.timeScale = 0.7;
+        idleAction.play();
+      }
+
+      const cnv = document.getElementById('avatar3d-canvas');
+      if(cnv) cnv.classList.add('ready');
+      const wg = document.getElementById('avatar-widget');
+      if(wg) wg.classList.add('has-3d');
+      const lo = document.getElementById('avatar3d-loading');
+      if(lo) lo.style.display='none';
+
+      const info = `meshes=${meshes.length} face=${faceMesh?'YES':'NO'} morphs=${morphDict?Object.keys(morphDict).length:0} anims=${(gltf.animations||[]).length} headBone=${headBone?'YES':'NO'}`;
+      console.log('[Avatar3D] loaded', info);
+      if(!faceMesh) showError('Modello senza morph targets jawOpen');
+    }catch(e){ showError('Post-load: '+e.message); console.error(e); }
+  }, (p)=>{
+    if(p && p.total){
+      const pct = Math.round(p.loaded/p.total*100);
+      showLoading('CARICANDO MODELLO 3D... '+pct+'%');
     }
-
-    const cnv = document.getElementById('avatar3d-canvas');
-    if(cnv) cnv.classList.add('ready');
-    const lo = document.getElementById('avatar3d-loading');
-    if(lo) lo.style.display='none';
-  }, undefined, (err)=>{
+  }, (err)=>{
+    showError('GLB load fail: '+(err&&err.message||err));
     console.error('GLB load error', err);
-    const lo = document.getElementById('avatar3d-loading');
-    if(lo) lo.textContent='ERRORE CARICAMENTO MODELLO';
   });
 }
 
-function applyHoloMaterial(mesh){
-  const src = mesh.material;
-  const mats = Array.isArray(src) ? src : [src];
-  const mapped = mats.map((m)=>{
-    if(!m) return m;
-    const isFace = /wolf3d_avatar|head|face/i.test(mesh.name||'') || (m.morphTargets);
-    const mat = new THREE.MeshStandardMaterial({
-      map: m.map || null,
-      normalMap: m.normalMap || null,
-      color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
-      roughness: 0.45,
-      metalness: 0.15,
-      emissive: HOLO_COLOR.clone().multiplyScalar(isFace?0.18:0.12),
-      emissiveMap: m.map || null,
-      emissiveIntensity: isFace?0.55:0.35,
-      transparent: true,
-      opacity: isFace?0.95:0.88,
-    });
-    mat.morphTargets = true;
-    mat.morphNormals = true;
-    return mat;
+function applyHoloTint(mesh){
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  mats.forEach((m)=>{
+    if(!m) return;
+    const isFace = (mesh===faceMesh) || /avatar|head|face|skin/i.test(mesh.name||'') || (m.morphTargets);
+    if('emissive' in m && m.emissive){
+      m.emissive.copy(HOLO_COLOR).multiplyScalar(isFace?0.20:0.13);
+    }
+    if('emissiveIntensity' in m) m.emissiveIntensity = isFace?0.45:0.30;
+    if(m.map) m.emissiveMap = m.map;
+    if('transparent' in m) m.transparent = true;
+    if('opacity' in m) m.opacity = isFace?0.97:0.92;
+    m.needsUpdate = true;
   });
-  mesh.material = Array.isArray(src) ? mapped : mapped[0];
-  mesh.frustumCulled = false;
 }
 
 function setMorph(name, value){
-  if(!faceMesh || !morphDict) return;
-  const i = morphDict[name];
-  if(i===undefined) return;
-  faceMesh.morphTargetInfluences[i] = value;
-  if(teethMesh && teethMesh.morphTargetDictionary){
-    const j = teethMesh.morphTargetDictionary[name];
-    if(j!==undefined) teethMesh.morphTargetInfluences[j] = value;
+  for(let k=0;k<morphMeshes.length;k++){
+    const m = morphMeshes[k];
+    const i = m.morphTargetDictionary[name];
+    if(i!==undefined) m.morphTargetInfluences[i] = value;
   }
 }
 
