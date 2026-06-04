@@ -426,28 +426,6 @@ def blender_generate_hyper3d(prompt: str, timeout: int = 150):
         return False, f"Hyper3D import fallito: {impres.get('error') or impres.get('message')}"
     return True, f"✅ Modello realistico '{name}' generato e importato (Hyper3D Rodin)"
 
-def blender_generate_shape3d(prompt: str):
-    """Genera un modello 3D da testo con Shap-E LOCALE (gratuito, no key) e lo importa.
-    Ritorna (success, message). Qualità bassa/stilizzata ma 100% gratis e offline."""
-    try:
-        from jarvis_shape3d import generate_3d
-    except ImportError:
-        return False, "Modulo Shap-E non disponibile"
-    out = "/tmp/shape3d_gen.glb"
-    r = generate_3d(prompt, out_path=out)
-    if not r.get("ok"):
-        return False, f"Shap-E fallito: {r.get('error')}"
-    path = r["path"]
-    code = f"""
-import bpy
-existing = set(bpy.data.objects)
-bpy.ops.import_scene.gltf(filepath=r'{path}')
-new = [o for o in bpy.data.objects if o not in existing]
-for o in new:
-    o.location = (0,0,0)
-"""
-    blender_execute(code)
-    return True, f"✅ Modello '{prompt[:40]}' generato con Shap-E (locale, gratuito)"
 
 # ── PolyHaven ─────────────────────────────────────────────────────────────
 
