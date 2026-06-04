@@ -71,6 +71,10 @@ CAPACITÀ:
 - Git: status, commit, branch, diff, log
 - Web search: DuckDuckGo con risultati completi
 - Approval flow: approvazione per azioni sensibili
+- Blender 3D: controlla Blender via MCP — crea oggetti, imposta materiali, esegui render,
+  scarica asset da PolyHaven e Sketchfab. Usa blender_* tools quando l'utente parla di
+  3D, modellazione, render, oggetti 3D, scene Blender, HDRI, texture, ecc.
+  (richiede Blender aperto con addon blender_addon.py attivo)
 
 REGOLE:
 1. Quando l'utente chiede di fare qualcosa, usa lo strumento appropriato

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""jarvis_tools.py — tutti i tools macOS unificati v5.0 — +OCR, Playwright, Computer Use, RAG, Approval"""
+"""jarvis_tools.py — tutti i tools macOS unificati v5.1 — +OCR, Playwright, Computer Use, RAG, Approval, Blender"""
 import subprocess, os, re, json, urllib.parse
 from pathlib import Path
 from datetime import datetime
@@ -27,6 +27,18 @@ from jarvis_computer_use import (mouse_move, mouse_click, mouse_drag, mouse_scro
     get_screen_resolution, computer_use_action)
 from jarvis_rag import rag
 from jarvis_approval import approval, check_and_approve
+# ── Blender MCP (opzionale — non blocca se Blender è chiuso) ──
+try:
+    from jarvis_blender import (
+        blender_status, blender_get_scene, blender_get_object, blender_execute,
+        blender_create_object, blender_delete_object, blender_set_material,
+        blender_move_object, blender_screenshot, blender_render,
+        blender_polyhaven_search, blender_polyhaven_download,
+        blender_sketchfab_search, blender_sketchfab_download,
+    )
+    _BLENDER_OK = True
+except ImportError:
+    _BLENDER_OK = False
 
 memory = JarvisMemory()
 
@@ -476,6 +488,42 @@ HANDLERS = {
     # Approval
     "approval_pending":approval_pending_tool,"approval_approve":approval_approve_tool,"approval_deny":approval_deny_tool,
 }
+
+# ── Blender tools (aggiunti a runtime se modulo disponibile) ──────────────
+if _BLENDER_OK:
+    def _b(fn): return lambda **kw: fn(**kw)
+    HANDLERS.update({
+        # Stato e scene
+        "blender_status":     lambda **_: blender_status(),
+        "blender_scene":      lambda **_: blender_get_scene(),
+        "blender_object":     lambda name="", **_: blender_get_object(name),
+        # Esecuzione codice Python in Blender
+        "blender_execute":    lambda code="", **_: blender_execute(code),
+        # Creazione / modifica oggetti
+        "blender_create":     lambda object_type="cube", name=None, location=None,
+                                     scale=None, size=1.0, **_:
+                              blender_create_object(object_type, name, location, scale, size),
+        "blender_delete":     lambda name="", **_: blender_delete_object(name),
+        "blender_material":   lambda object_name="", color=None, material_name=None,
+                                     metallic=0.0, roughness=0.5, **_:
+                              blender_set_material(object_name, color, material_name, metallic, roughness),
+        "blender_move":       lambda name="", location=None, rotation=None, scale=None, **_:
+                              blender_move_object(name, location, rotation, scale),
+        # Render e screenshot
+        "blender_screenshot": lambda save_path=None, **_: blender_screenshot(save_path),
+        "blender_render":     lambda output_path="/tmp/blender_render.png", frame=None, **_:
+                              blender_render(output_path, frame),
+        # PolyHaven
+        "blender_polyhaven_search":    lambda query="", asset_type="hdris", **_:
+                                       blender_polyhaven_search(query, asset_type),
+        "blender_polyhaven_download":  lambda asset_id="", asset_type="textures", resolution="2k", **_:
+                                       blender_polyhaven_download(asset_id, asset_type, resolution),
+        # Sketchfab
+        "blender_sketchfab_search":    lambda query="", count=10, **_:
+                                       blender_sketchfab_search(query, count),
+        "blender_sketchfab_download":  lambda model_id="", **_:
+                                       blender_sketchfab_download(model_id),
+    })
 
 def execute_tool(name, arguments):
     h = HANDLERS.get(name)
