@@ -1,11 +1,56 @@
 #!/usr/bin/env python3
-"""jarvis_agent.py — Groq agent con memoria, context-aware, tool routing, streaming v5.0"""
+"""jarvis_agent.py — Groq agent con memoria, context-aware, tool routing, streaming v5.1
+Novità v5.1: smart LLM tier routing (fast 8b / deep 70b) basato sulla complessità del messaggio
+"""
 import json, requests, time
 from pathlib import Path
 from jarvis_tools import execute_tool, TOOLS_SCHEMA, memory
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 OLLAMA_URL = "http://localhost:11434/api/chat"
+
+# ── SMART TIER ROUTING ──
+FAST_MODEL  = "llama-3.1-8b-instant"   # ~3-4× più veloce, ottimo per query semplici
+DEEP_MODEL  = "llama-3.3-70b-versatile" # più potente, per analisi/coding/testo lungo
+
+FAST_TRIGGERS = [
+    # saluti e cortesie
+    "ciao", "salve", "buongiorno", "buonasera", "grazie", "prego",
+    "come stai", "che ora", "che giorno", "che tempo",
+    # domande ultra brevi
+    "ok", "si", "no", "sì", "dai", "perfetto",
+]
+DEEP_TRIGGERS = [
+    # coding e analisi
+    "codice", "programma", "scrivi", "analizza", "spiega dettagliatamente",
+    "refactor", "debug", "errore nel codice", "implementa",
+    # testi lunghi
+    "riassumi", "traduci", "parafrasa", "ricerca",
+    "progetta", "architettura", "strategia", "piano",
+    # performance / tecnico
+    "performance", "ottimizza", "produzione", "migliorare", "confronta",
+    "differenza tra", "come funziona", "perché", "spiegami",
+]
+
+def _detect_complexity(msg: str) -> str:
+    """Ritorna il modello Groq ottimale per questa query.
+    Fast (8b) per query semplici/brevi, Deep (70b) per analisi/codice/testi lunghi."""
+    low = msg.lower().strip()
+    words = low.split()
+    # Controlla deep PRIMA del short-check (4 parole ma "analizza il codice" è deep)
+    if any(t in low for t in DEEP_TRIGGERS):
+        return DEEP_MODEL
+    # Messaggi molto brevi → fast
+    if len(words) <= 5:
+        return FAST_MODEL
+    # Trigger espliciti fast
+    if any(t in low for t in FAST_TRIGGERS) and len(words) <= 12:
+        return FAST_MODEL
+    # Messaggi lunghi (> 25 parole) o con punto interrogativo multiplo → deep
+    if len(words) > 25 or low.count("?") >= 2:
+        return DEEP_MODEL
+    # Default: usa il modello configurato (normalmente il 70b)
+    return None  # None = usa cfg["groq"]["model"] invariato
 
 SYSTEM_PROMPT = """Sei J.A.R.V.I.S. — Just A Rather Very Intelligent System, l'assistente AI personale di Daniele sul Mac Mini M2 Pro.
 
@@ -420,12 +465,17 @@ class JarvisAgent:
             "Content-Type": "application/json"
         }
 
+        chosen_model = _detect_complexity(user_message) or self.cfg["groq"]["model"]
         payload = {
-            "model": self.cfg["groq"]["model"],
+            "model": chosen_model,
             "messages": messages,
             "temperature": float(self.cfg["groq"]["temperature"]),
             "max_tokens": 2048,
         }
+        if chosen_model == FAST_MODEL:
+            print(f"  [Tier] FAST ({FAST_MODEL})")
+        else:
+            print(f"  [Tier] DEEP ({chosen_model})")
 
         try:
             resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=45)
@@ -510,13 +560,18 @@ class JarvisAgent:
             "Content-Type": "application/json"
         }
 
+        chosen_model = _detect_complexity(user_message) or self.cfg["groq"]["model"]
         payload = {
-            "model": self.cfg["groq"]["model"],
+            "model": chosen_model,
             "messages": messages,
             "temperature": float(self.cfg["groq"]["temperature"]),
             "max_tokens": 2048,
             "stream": True
         }
+        if chosen_model == FAST_MODEL:
+            print(f"  [Tier] FAST stream ({FAST_MODEL})")
+        else:
+            print(f"  [Tier] DEEP stream ({chosen_model})")
 
         t0 = time.time()
         full_reply = ""

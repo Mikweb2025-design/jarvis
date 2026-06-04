@@ -452,6 +452,73 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 .wave span:nth-child(3){height:10px;animation-delay:0.2s}.wave span:nth-child(4){height:6px;animation-delay:0.3s}
 .wave span:nth-child(5){height:3px;animation-delay:0.4s}
 @keyframes waveAnim{0%,100%{transform:scaleY(0.5)}50%{transform:scaleY(2)}}
+/* ── TOOL / TIER BADGE ── */
+.tool-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:3px;
+  font-size:9px;font-family:var(--fm);letter-spacing:0.15em;border:1px solid;margin:1px 2px;
+  animation:badgeIn 0.2s ease}
+@keyframes badgeIn{from{opacity:0;transform:scale(0.85)}to{opacity:1;transform:scale(1)}}
+.tool-badge.action{color:var(--pk);border-color:rgba(255,0,170,0.35);background:rgba(255,0,170,0.07)}
+.tool-badge.tier-fast{color:#44ff88;border-color:rgba(68,255,136,0.35);background:rgba(68,255,136,0.06)}
+.tool-badge.tier-deep{color:var(--cy);border-color:rgba(0,240,255,0.3);background:rgba(0,240,255,0.05)}
+#tier-indicator{position:fixed;top:12px;right:16px;z-index:200;font-size:8px;font-family:var(--fm);
+  letter-spacing:0.15em;padding:3px 8px;border-radius:3px;opacity:0;transition:opacity 0.4s;
+  border:1px solid;pointer-events:none}
+#tier-indicator.fast{color:#44ff88;border-color:rgba(68,255,136,0.4);background:rgba(68,255,136,0.08);opacity:1}
+#tier-indicator.deep{color:var(--cy);border-color:rgba(0,240,255,0.3);background:rgba(0,240,255,0.07);opacity:1}
+/* ── MEMORY PANEL ── */
+#mem-btn{cursor:pointer;font-size:18px;background:none;border:1px solid rgba(170,0,255,0.25);
+  color:var(--pp);padding:7px 10px;border-radius:4px;transition:all 0.2s;font-family:var(--fd)}
+#mem-btn:hover{border-color:var(--pp);background:rgba(170,0,255,0.08);box-shadow:0 0 8px rgba(170,0,255,0.2)}
+#mem-panel{position:fixed;right:0;top:0;bottom:0;width:340px;background:rgba(10,10,18,0.97);
+  border-left:1px solid rgba(170,0,255,0.2);z-index:300;transform:translateX(100%);
+  transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);display:flex;flex-direction:column;
+  backdrop-filter:blur(16px)}
+#mem-panel.open{transform:translateX(0)}
+#mem-panel-header{padding:16px 20px;border-bottom:1px solid rgba(170,0,255,0.15);
+  display:flex;align-items:center;gap:10px;flex-shrink:0}
+#mem-panel-header h3{font-family:var(--fd);font-size:11px;letter-spacing:0.3em;color:var(--pp);
+  text-shadow:0 0 10px rgba(170,0,255,0.5);margin:0}
+#mem-panel-header span{margin-left:auto;font-size:9px;color:var(--tx3);font-family:var(--fm)}
+#mem-close{background:none;border:none;color:var(--tx3);cursor:pointer;font-size:18px;padding:0;
+  line-height:1;transition:color 0.2s}
+#mem-close:hover{color:var(--pk)}
+#mem-search{width:100%;background:rgba(18,18,26,0.9);border:1px solid rgba(170,0,255,0.2);
+  color:var(--tx);font-size:12px;font-family:var(--fm);padding:8px 12px;outline:none;
+  border-radius:3px;margin:0;box-sizing:border-box;letter-spacing:0.05em}
+#mem-search:focus{border-color:var(--pp);box-shadow:0 0 8px rgba(170,0,255,0.2)}
+#mem-search-wrap{padding:12px 16px;border-bottom:1px solid rgba(170,0,255,0.08);flex-shrink:0}
+#mem-list{flex:1;overflow-y:auto;padding:10px 0}
+#mem-list::-webkit-scrollbar{width:3px}
+#mem-list::-webkit-scrollbar-thumb{background:rgba(170,0,255,0.3);border-radius:2px}
+.mem-item{padding:10px 16px;border-bottom:1px solid rgba(170,0,255,0.06);
+  display:flex;align-items:flex-start;gap:8px;transition:background 0.15s}
+.mem-item:hover{background:rgba(170,0,255,0.05)}
+.mem-item-body{flex:1;min-width:0}
+.mem-item-cat{font-size:8px;font-family:var(--fm);letter-spacing:0.2em;color:var(--pp);
+  margin-bottom:3px;text-transform:uppercase;opacity:0.7}
+.mem-item-text{font-size:11px;color:var(--tx2);line-height:1.5;word-break:break-word;
+  cursor:pointer;border-radius:2px;padding:2px 4px;border:1px solid transparent;transition:all 0.15s}
+.mem-item-text:hover{border-color:rgba(170,0,255,0.2);background:rgba(170,0,255,0.06)}
+.mem-item-text[contenteditable=true]{border-color:var(--pp);background:rgba(170,0,255,0.1);outline:none;color:var(--tx)}
+.mem-item-date{font-size:8px;color:var(--tx4);margin-top:3px;font-family:var(--fm)}
+.mem-del{background:none;border:none;color:rgba(255,85,119,0.4);cursor:pointer;font-size:14px;
+  padding:0 2px;line-height:1;transition:color 0.2s;flex-shrink:0;margin-top:2px}
+.mem-del:hover{color:#ff5577}
+.mem-save-btn{font-size:9px;font-family:var(--fm);padding:2px 6px;border:1px solid var(--pp);
+  background:rgba(170,0,255,0.1);color:var(--pp);cursor:pointer;border-radius:2px;margin-top:4px;
+  display:none;letter-spacing:0.1em}
+.mem-save-btn.visible{display:inline-block}
+#mem-add-wrap{padding:12px 16px;border-top:1px solid rgba(170,0,255,0.1);flex-shrink:0}
+#mem-add-input{width:100%;background:rgba(18,18,26,0.9);border:1px solid rgba(170,0,255,0.2);
+  color:var(--tx);font-size:11px;font-family:var(--fm);padding:7px 10px;outline:none;
+  border-radius:3px;box-sizing:border-box;margin-bottom:6px}
+#mem-add-input:focus{border-color:var(--pp)}
+#mem-add-btn{width:100%;background:rgba(170,0,255,0.12);border:1px solid rgba(170,0,255,0.3);
+  color:var(--pp);font-family:var(--fd);font-size:9px;letter-spacing:0.2em;padding:7px;
+  cursor:pointer;border-radius:3px;transition:all 0.2s}
+#mem-add-btn:hover{background:rgba(170,0,255,0.2);box-shadow:0 0 10px rgba(170,0,255,0.2)}
+#mem-empty{text-align:center;color:var(--tx4);font-size:11px;font-family:var(--fm);
+  padding:30px 20px;letter-spacing:0.1em}
 #irow{display:flex;align-items:center;gap:8px}
 #minput{flex:1;background:rgba(18,18,26,0.9);border:1px solid var(--n3);color:var(--tx);font-size:15px;font-family:var(--fb);padding:9px 14px;outline:none;transition:all 0.2s}
 #minput::placeholder{color:var(--tx4);font-size:13px}
@@ -540,6 +607,22 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 <div id="noise"></div>
 <div id="glitch-overlay"></div>
 <div id="holo-overlay"></div>
+<div id="tier-indicator"></div>
+<!-- Memory Panel -->
+<div id="mem-panel">
+  <div id="mem-panel-header">
+    <h3>◈ MEMORIA</h3><span id="mem-count-label">0 facts</span>
+    <button id="mem-close" onclick="closeMem()">✕</button>
+  </div>
+  <div id="mem-search-wrap">
+    <input id="mem-search" placeholder="FILTRA RICORDI..." oninput="filterMem(this.value)">
+  </div>
+  <div id="mem-list"></div>
+  <div id="mem-add-wrap">
+    <input id="mem-add-input" placeholder="Nuovo ricordo...">
+    <button id="mem-add-btn" onclick="addMem()">+ SALVA RICORDO</button>
+  </div>
+</div>
 <div id="particles"></div>
 
 <div id="boot">
@@ -717,6 +800,7 @@ html.theme-crystal #holo-canvas{opacity:0.55}
         <div id="spkbar"></div>
         <div id="irow">
           <input id="minput" placeholder="Enter command..." autocomplete="off">
+          <button id="mem-btn" onclick="openMem()" title="Memoria">🧠</button>
           <button id="micbtn" onclick="toggleMic()">🎤</button>
           <button id="sendbtn" onclick="send()">SEND</button>
         </div>
@@ -1657,6 +1741,7 @@ async function doChat(text){
     var d=await r.json();if(d.error)throw new Error(d.error);
     var elapsed=((Date.now()-t0)/1000).toFixed(2);
     botmsg(d.reply||'',d.actions||[]);
+    if(d.model)showTierBadge(!!d.fast,d.model.replace('llama-','').replace('-versatile','').replace('-instant','⚡'));
     document.getElementById('latbar').textContent='LAT '+elapsed+'s';
     log('response '+elapsed+'s // model: '+(d.model||'groq'));
     triggerGlitch();
@@ -1741,6 +1826,137 @@ function stopMic(){
 function resetChat(){fetch(SRV+'/api/reset',{method:'POST'}).catch(function(){});if(msgsEl)msgsEl.innerHTML='';msgCount=0;if(msgCountEl)msgCountEl.textContent='0 MSG';sysmsg('chat reset')}
 
 function esc(t){return(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ══════════════════════════════════════════════════
+// ── FEATURE: TIER BADGE (fast / deep model) ──
+// ══════════════════════════════════════════════════
+var tierHideTimer=null;
+function showTierBadge(isFast,modelName){
+  var el=document.getElementById('tier-indicator');
+  if(!el)return;
+  if(tierHideTimer){clearTimeout(tierHideTimer);}
+  el.className=isFast?'fast':'deep';
+  el.textContent=isFast?'⚡ FAST — '+modelName:'🧠 DEEP — '+modelName;
+  tierHideTimer=setTimeout(function(){if(el)el.className='';},4000);
+}
+
+// ══════════════════════════════════════════════════
+// ── FEATURE: TOOL BADGE in botmsg ──
+// ══════════════════════════════════════════════════
+var TOOL_ICONS={
+  'calendar':'📅','mail':'📧','email':'📧','email':'📧','search':'🔍',
+  'screenshot':'📸','ocr':'👁','rag':'📚','git':'🔀','browser':'🌐',
+  'computer':'🖱','mouse':'🖱','keyboard':'⌨','app':'🚀','note':'📝',
+  'memory':'🧠','plan':'📋','system':'⚙','weather':'🌤','webcam':'📹',
+  'spotify':'🎵','music':'🎵','reminder':'⏰','file':'📄','shell':'💻',
+};
+function toolIcon(action){
+  var l=action.toLowerCase();
+  for(var k in TOOL_ICONS){if(l.includes(k))return TOOL_ICONS[k];}
+  return '⚙';
+}
+// Aggiorna botmsg per mostrare badge styled per ogni action
+var _origBotmsg=window.botmsg||null;
+function botmsg(t,actions){
+  if(!msgsEl)return;
+  var th=document.getElementById('thinkEl');if(th)th.classList.remove('active');
+  var d=document.createElement('div');d.className='msg';
+  var actHtml='', wc='';
+  (actions||[]).forEach(function(a){
+    if(a.startsWith('WEATHER_CARD:')){try{wc=weatherCardHTML(JSON.parse(a.slice(13)))}catch(e){}}
+    else if(a.startsWith('WEBCAM:')){try{var wd=JSON.parse(a.slice(7));openWebcam(wd.city,wd.lat,wd.lon,wd.video_id)}catch(e){}}
+    else if(!a.startsWith('SPEECH:')){
+      var icon=toolIcon(a);
+      var label=a.length>60?a.slice(0,60)+'…':a;
+      actHtml+='<span class="tool-badge action">'+icon+' '+esc(label)+'</span>';
+    }
+  });
+  var rendered=typeof marked!=='undefined'?marked.parse(t||''):t.replace(/\n/g,'<br>');
+  d.innerHTML='<div class="msg-header"><div class="msg-avatar jarvis">AI</div><span class="msg-name jarvis">J.A.R.V.I.S</span><span class="msg-time">'+ts()+'</span></div>'+(actHtml?'<div style="padding:4px 18px 2px;display:flex;flex-wrap:wrap;gap:2px">'+actHtml+'</div>':'')+wc+'<div class="msg-body jarvis-msg">'+rendered+'</div>';
+  msgsEl.appendChild(d);msgsEl.scrollTop=msgsEl.scrollHeight;
+  msgCount++;if(msgCountEl)msgCountEl.textContent=msgCount+' MSG';
+}
+
+// ══════════════════════════════════════════════════
+// ── FEATURE: MEMORY PANEL (view / edit / delete / add) ──
+// ══════════════════════════════════════════════════
+var memCache=[];
+function openMem(){
+  document.getElementById('mem-panel').classList.add('open');
+  loadMem();
+}
+function closeMem(){
+  document.getElementById('mem-panel').classList.remove('open');
+}
+function loadMem(){
+  fetch(SRV+'/api/memory/all').then(function(r){return r.json()}).then(function(d){
+    memCache=d.memories||[];
+    renderMem(memCache);
+  }).catch(function(e){log('mem load: '+e.message)});
+}
+function renderMem(list){
+  var el=document.getElementById('mem-list');
+  var lbl=document.getElementById('mem-count-label');
+  if(lbl)lbl.textContent=list.length+' facts';
+  if(!list||!list.length){el.innerHTML='<div id="mem-empty">NESSUN RICORDO SALVATO</div>';return;}
+  el.innerHTML=list.map(function(m){
+    var cat=m.category||'fact';
+    var dt=m.created_at?(m.created_at.replace('T',' ').slice(0,16)):'';
+    return '<div class="mem-item" data-id="'+m.id+'">'
+      +'<div class="mem-item-body">'
+      +'<div class="mem-item-cat">'+esc(cat)+'</div>'
+      +'<div class="mem-item-text" data-orig="'+esc(m.content)+'" onclick="editMem(this)">'+esc(m.content)+'</div>'
+      +'<button class="mem-save-btn" id="msave-'+m.id+'" onclick="saveMem('+m.id+',this)">SALVA</button>'
+      +'<div class="mem-item-date">'+dt+'</div>'
+      +'</div>'
+      +'<button class="mem-del" onclick="delMem('+m.id+',this)" title="Elimina">✕</button>'
+      +'</div>';
+  }).join('');
+}
+function filterMem(q){
+  if(!q){renderMem(memCache);return;}
+  var low=q.toLowerCase();
+  renderMem(memCache.filter(function(m){return m.content.toLowerCase().includes(low)||(m.category||'').toLowerCase().includes(low);}));
+}
+function editMem(el){
+  el.contentEditable='true';el.focus();
+  var id=el.closest('.mem-item').dataset.id;
+  var btn=document.getElementById('msave-'+id);
+  if(btn)btn.classList.add('visible');
+  // deselect on blur
+  el.onblur=function(){
+    if(el.textContent.trim()===(el.dataset.orig||'')){
+      el.contentEditable='false';if(btn)btn.classList.remove('visible');
+    }
+  };
+}
+function saveMem(id,btn){
+  var el=btn.closest('.mem-item').querySelector('.mem-item-text');
+  var newText=el.textContent.trim();
+  if(!newText)return;
+  fetch(SRV+'/api/memory/update',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:id,content:newText})})
+    .then(function(){el.contentEditable='false';btn.classList.remove('visible');el.dataset.orig=newText;loadMem();})
+    .catch(function(e){log('mem save: '+e.message)});
+}
+function delMem(id,btn){
+  var item=btn.closest('.mem-item');
+  item.style.opacity='0.4';
+  fetch(SRV+'/api/memory/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:id})})
+    .then(function(){item.remove();memCache=memCache.filter(function(m){return m.id!==id;});
+      var lbl=document.getElementById('mem-count-label');if(lbl)lbl.textContent=memCache.length+' facts';})
+    .catch(function(e){item.style.opacity='1';log('mem del: '+e.message)});
+}
+function addMem(){
+  var inp=document.getElementById('mem-add-input');
+  var txt=(inp?inp.value:''||'').trim();
+  if(!txt)return;
+  fetch(SRV+'/api/memory/remember',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({content:txt,category:'user'})})
+    .then(function(){if(inp)inp.value='';loadMem();})
+    .catch(function(e){log('mem add: '+e.message)});
+}
 
 // ── INIT ──
 var holoState='idle';

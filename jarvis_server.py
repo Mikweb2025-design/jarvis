@@ -437,6 +437,10 @@ class H(BaseHTTPRequestHandler):
             elif self.path=="/api/memory/recent":
                 self._json(200, {"conversations": memory.get_recent_conversations(10)})
 
+            elif self.path.startswith("/api/memory/all"):
+                items = memory.get_all(limit=200)
+                self._json(200, {"memories": items, "total": len(items)})
+
             elif self.path=="/api/calendar/today":
                 from jarvis_calendar import get_today_events
                 self._json(200, {"events": get_today_events()})
@@ -562,14 +566,18 @@ class H(BaseHTTPRequestHandler):
                         "Content-Type": "application/json"
                     }
                     
+                    from jarvis_agent import _detect_complexity, FAST_MODEL
+                    chosen_model = _detect_complexity(msg) or cfg["groq"]["model"]
                     payload = {
-                        "model": cfg["groq"]["model"],
+                        "model": chosen_model,
                         "messages": messages,
                         "temperature": float(cfg["groq"]["temperature"]),
                         "max_tokens": 2048,
                         "stream": True
                     }
-                    
+                    # Notifica UI il tier usato
+                    self._sse_event({"type":"tier","model":chosen_model,"fast":chosen_model==FAST_MODEL})
+
                     t0 = time.time()
                     full_reply = ""
                     first_token_time = None
@@ -718,9 +726,12 @@ class H(BaseHTTPRequestHandler):
                         cfg["groq"]["temperature"] = float(body["temperature"])
                 t0 = time.time()
                 try:
+                    from jarvis_agent import _detect_complexity, FAST_MODEL
+                    chosen = _detect_complexity(msg) or cfg["groq"]["model"]
                     reply, actions = agent.chat(msg)
                     self._json(200,{"reply":reply,"actions":actions,
-                        "elapsed":round(time.time()-t0,2),"model":cfg["groq"]["model"]})
+                        "elapsed":round(time.time()-t0,2),
+                        "model":chosen,"fast":chosen==FAST_MODEL})
                 except Exception as e:
                     traceback.print_exc()
                     self._json(500,{"error":str(e)})
@@ -828,6 +839,21 @@ class H(BaseHTTPRequestHandler):
                 if not key: self._json(400,{"error":"Key mancante"}); return
                 result = memory.set_preference(key, value)
                 self._json(200,{"result":result})
+
+            elif self.path=="/api/memory/delete":
+                mid = body.get("id")
+                if mid is None: self._json(400,{"error":"ID mancante"}); return
+                result = memory.delete_memory(int(mid))
+                self._json(200,{"result":result})
+
+            elif self.path=="/api/memory/update":
+                mid = body.get("id")
+                content = body.get("content","").strip()
+                if mid is None or not content: self._json(400,{"error":"ID e content richiesti"}); return
+                c = memory.db.cursor()
+                c.execute("UPDATE memories SET content=?, updated_at=datetime('now') WHERE id=?", (content, int(mid)))
+                memory.db.commit()
+                self._json(200,{"result":f"Memoria {mid} aggiornata"})
 
             elif self.path=="/api/calendar/create":
                 title = body.get("title","")
