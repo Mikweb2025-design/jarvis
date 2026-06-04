@@ -336,7 +336,9 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            if self.path in ("/","/index.html"):
+            # Path senza query string (così "/?fresh=123" matcha come "/")
+            _path_only = self.path.split("?", 1)[0]
+            if _path_only in ("/", "/index.html"):
                 p = Path(__file__).parent / "jarvis_app.html"
                 if p.exists():
                     b = p.read_bytes()
