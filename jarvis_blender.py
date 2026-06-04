@@ -299,12 +299,54 @@ bpy.context.scene.render.resolution_x = 800
 bpy.context.scene.render.resolution_y = 1000
 bpy.context.scene.eevee.taa_render_samples = 32
 bpy.context.scene.render.film_transparent = False
+
+# 9. VIEWPORT: material preview + inquadra l'avatar + redraw
+#    (cosi l'utente VEDE l'avatar texturizzato nella finestra Blender)
+bpy.ops.object.select_all(action='DESELECT')
+for o in bpy.data.objects:
+    if o.type == 'MESH':
+        o.select_set(True)
+for area in bpy.context.screen.areas:
+    if area.type == 'VIEW_3D':
+        for space in area.spaces:
+            if space.type == 'VIEW_3D':
+                space.shading.type = 'MATERIAL'
+        for region in area.regions:
+            if region.type == 'WINDOW':
+                try:
+                    with bpy.context.temp_override(area=area, region=region):
+                        bpy.ops.view3d.view_selected()
+                except Exception as e:
+                    print('frame err', e)
+        area.tag_redraw()
 """
     r = blender_execute(code)
     # Conta oggetti nella scena
     info = _send("get_scene_info").get("result", {})
     n = info.get("object_count", "?")
-    return f"✅ Avatar importato in Blender ({n} oggetti). Chiama blender_render() per renderizzare."
+    return f"✅ Avatar importato in Blender ({n} oggetti). Guarda la finestra di Blender — l'avatar è inquadrato in material preview. Di' 'renderizza' per il render finale."
+
+def blender_focus_view() -> str:
+    """Forza il viewport di Blender in material preview e inquadra tutti gli oggetti.
+    Utile quando i comandi via socket non aggiornano la finestra."""
+    code = """
+import bpy
+for area in bpy.context.screen.areas:
+    if area.type == 'VIEW_3D':
+        for space in area.spaces:
+            if space.type == 'VIEW_3D':
+                space.shading.type = 'MATERIAL'
+        for region in area.regions:
+            if region.type == 'WINDOW':
+                try:
+                    with bpy.context.temp_override(area=area, region=region):
+                        bpy.ops.view3d.view_all(center=False)
+                except Exception as e:
+                    print('view err', e)
+        area.tag_redraw()
+"""
+    blender_execute(code)
+    return "✅ Viewport aggiornato (material preview + inquadratura)"
 
 # ── PolyHaven ─────────────────────────────────────────────────────────────
 

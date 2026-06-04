@@ -130,7 +130,17 @@ class JarvisAgent:
 
             # importa/setup avatar
             elif any(w in lower for w in ['importa', 'carica', 'setup', 'prepara', 'avatar', 'personaggio', 'modello']):
+                import os
                 result = execute_tool('blender_setup_avatar', {})
+                actions_done.append(result)
+                # Mostra screenshot del viewport in chat
+                execute_tool('blender_screenshot', {'save_path': '/tmp/blender_viewport.png'})
+                if os.path.exists('/tmp/blender_viewport.png'):
+                    actions_done.append('IMAGE:/api/image?file=blender_viewport.png')
+
+            # inquadra / aggiorna vista
+            elif any(w in lower for w in ['inquadra', 'aggiorna vista', 'aggiorna viewport', 'mostra avatar', 'focus', 'centra']):
+                result = execute_tool('blender_focus_view', {})
                 actions_done.append(result)
 
             # render
@@ -178,6 +188,12 @@ class JarvisAgent:
                 if color and name:
                     execute_tool('blender_material', {'object_name': name, 'color': color})
                 actions_done.append(result)
+                # Inquadra la vista e mostra screenshot in chat così l'utente VEDE
+                import os
+                execute_tool('blender_focus_view', {})
+                execute_tool('blender_screenshot', {'save_path': '/tmp/blender_viewport.png'})
+                if os.path.exists('/tmp/blender_viewport.png'):
+                    actions_done.append('IMAGE:/api/image?file=blender_viewport.png')
 
             # PolyHaven
             elif any(w in lower for w in ['polyhaven', 'poly haven', 'hdri']):
