@@ -2,9 +2,11 @@
 """jarvis_agent.py — Groq agent con memoria, context-aware, tool routing, streaming v5.1
 Novità v5.1: smart LLM tier routing (fast 8b / deep 70b) basato sulla complessità del messaggio
 """
-import json, requests, time
+import json, requests, time, re
 from pathlib import Path
 from jarvis_tools import execute_tool, TOOLS_SCHEMA, memory
+from jarvis_memory import KnowledgeGraph
+from jarvis_rag import rag
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -113,13 +115,169 @@ REGOLE:
 14. Providers: providers_switch per cambiare LLM (groq/ollama/openai/gemini/anthropic), providers_list per vedere stato
 15. Network: network_connectivity per diagnostica internet, network_speedtest per velocità
 16. MCP: mcp_list per vedere server, mcp_enable per attivare (github, slack, filesystem), mcp_call per usare tool
-17. Home Assistant: ha_states per vedere lo stato di tutte le entità, ha_state per un'entità specifica, ha_service per controllare luci, switch, termostato, ecc. (domain=light, switch, climate, media_player...). Usa ha_config per info sulla versione HA
+17. Home Assistant: ha_states per vedere lo stato di tutte le entità, ha_state per un'entità specifica, ha_service per controllare luci, switch, termostato, ecc. (domain=light, switch, climate, media_player...). Usa ha_config per info sulla versione HA. ha_dashboard per aprire la dashboard HA nel browser
 """
 
 class JarvisAgent:
     def __init__(self, cfg):
         self.cfg = cfg
         self.history = []
+        # ── Knowledge Graph ──
+        self.graph = KnowledgeGraph(memory.db)
+        # ── Conversational Awareness ──
+        self.conversation_summary = ""
+        self.current_topic = "general"
+        self.topic_history = []
+        self.turn_count = 0
+
+    # ── TOPIC DETECTION ────────────────────────────────────────────────────
+    TOPIC_KEYWORDS = {
+        "code": ["codice", "programma", "python", "script", "function", "bug", "debug",
+                 "repo", "git", "commit", "branch", "api", "server", "database", "sql",
+                 "algoritmo", "classe", "metodo", "variabile", "refactor", "test",
+                 "coding", "sviluppo", "software", "deploy"],
+        "business": ["riunione", "meeting", "progetto", "scadenza", "cliente", "fattura",
+                     "budget", "obiettivo", "kpi", "report", "strategia", "business",
+                     "lavoro", "ufficio", "team", "manager", "presentazione",
+                     "fatturato", "crescita", "produttività"],
+        "wellbeing": ["benessere", "salute", "relax", "pausa", "meditazione", "yoga",
+                      "palestra", "corsa", "dieta", "sonno", "stress", "ansia",
+                      "tranquillo", "calma", "respiro", "energia", "umore",
+                      "riposo", "mindfulness", "benessere"],
+        "casual": ["ciao", "come stai", "che fai", "raga", "amico", "bella",
+                   "tutto bene", "che si dice", "novità", "weekend", "serata",
+                   "grazie", "prego", "perfetto", "ok", "bello"],
+    }
+
+    TONE_INSTRUCTIONS = {
+        "code": """
+TONO: Chirurgico e tecnico. Vai dritto al punto.
+- Usa terminologia tecnica precisa (nomi di funzioni, variabili, framework)
+- Dai risposte concise con esempi di codice quando utile
+- Evita fronzoli, superlativi, linguaggio emotivo
+- Se c'è un bug, spiega causa ed effetto in modo logico""",
+
+        "business": """
+TONO: Professionale e pragmatico. Orientato ai risultati.
+- Struttura la risposta in modo chiaro (fatti, implicazioni, azioni consigliate)
+- Sii diretto ma educato, come un consulente senior
+- Quantifica quando possibile (tempi, costi, impatti)
+- Evita dettagli tecnici superflui""",
+
+        "wellbeing": """
+TONO: Incoraggiante e caloroso. Supportivo ma non invadente.
+- Usa un linguaggio positivo e rassicurante
+- Offri suggerimenti pratici, non solo teorie
+- Riconosci lo sforzo dell'utente
+- Mantieni un tono caldo ma professionale, come un coach""",
+
+        "casual": """
+TONO: Amichevole e rilassato. Come parlare con un amico.
+- Risposte brevi e naturali, come in una conversazione tra amici
+- Puoi usare un po' di ironia leggera quando appropriato
+- Niente fronzoli, sii spontaneo
+- Chiedi all'utente come procedere se la richiesta è vaga""",
+
+        "general": """
+TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
+- Sii conciso, competente, leggermente ironico quando appropriato
+- Bilancia precisione tecnica e chiarezza espositiva
+- Adatta il livello di dettaglio alla complessità della domanda""",
+    }
+
+    def _detect_topic(self, text):
+        """Rileva il topic principale del messaggio."""
+        low = text.lower().strip()
+        if not low:
+            return "general"
+        scores = {}
+        for topic, keywords in self.TOPIC_KEYWORDS.items():
+            scores[topic] = sum(k in low for k in keywords)
+        # Penalizza casual se il messaggio è lungo (probabilmente non è solo un saluto)
+        if len(low.split()) > 8:
+            scores["casual"] = scores.get("casual", 0) * 0.3
+        best = max(scores, key=scores.get)
+        return best if scores[best] > 0 else "general"
+
+    def _get_tone_instructions(self, topic):
+        """Restituisce le istruzioni di tono per il topic rilevato."""
+        return self.TONE_INSTRUCTIONS.get(topic, self.TONE_INSTRUCTIONS["general"])
+
+    # ── CONVERSATIONAL AWARENESS ───────────────────────────────────────────
+
+    def _update_conversation_summary(self, user_msg, reply):
+        """Aggiorna il riassunto della conversazione in corso."""
+        self.turn_count += 1
+        topic = self._detect_topic(user_msg)
+        self.topic_history.append(topic)
+        # Tieni solo gli ultimi 5 topic
+        if len(self.topic_history) > 5:
+            self.topic_history = self.topic_history[-5:]
+
+        # Topic prevalente
+        if self.topic_history:
+            self.current_topic = max(set(self.topic_history), key=self.topic_history.count)
+
+        # Aggiorna il riassunto ogni 2 turni per non appesantire
+        if self.turn_count % 2 == 0 and reply:
+            snippet_user = user_msg[:80].strip()
+            snippet_reply = reply[:80].strip()
+            old = self.conversation_summary
+            new_entry = f"[{self.turn_count}] Utente: {snippet_user}… → Assistente: {snippet_reply}…"
+            # Tieni solo le ultime 3 entry
+            entries = [e for e in self.conversation_summary.split("\n") if e.strip()]
+            entries.append(new_entry)
+            if len(entries) > 3:
+                entries = entries[-3:]
+            self.conversation_summary = "\n".join(entries)
+
+        # Estrai conoscenza dal grafo
+        if reply:
+            self.graph.extract_from_conversation(user_msg, reply)
+
+    def _get_conversation_context(self):
+        """Restituisce il contesto conversazionale da iniettare nel prompt."""
+        parts = []
+        if self.conversation_summary:
+            parts.append(f"RIASSUNTO CONVERSAZIONE:\n{self.conversation_summary}")
+        parts.append(f"TOPICO CORRENTE: {self.current_topic}")
+        return "\n\n".join(parts)
+
+    def _build_system_prompt(self, user_message):
+        """Costruisce il system prompt completo con memoria, grafo, RAG, tono e contesto."""
+        topic = self._detect_topic(user_message)
+        tone = self._get_tone_instructions(topic)
+
+        # Memoria classica
+        memory_context = memory.get_context_for_prompt(user_message, max_items=3)
+
+        # Grafo di conoscenza
+        graph_context = self.graph.get_context_for_prompt(user_message)
+
+        # RAG — contesto da documenti (solo per domande sostanziali)
+        rag_context = ""
+        if len(user_message.split()) >= 3:
+            try:
+                rag_context = rag.query_context(user_message, max_chunks=3)
+            except Exception as e:
+                print(f"[RAG] query_context error: {e}")
+
+        # Contesto conversazionale
+        conv_context = self._get_conversation_context()
+
+        # Assemblea
+        parts = [SYSTEM_PROMPT]
+        if rag_context:
+            parts.append(rag_context)
+        if graph_context:
+            parts.append(graph_context)
+        if memory_context:
+            parts.append(memory_context)
+        if conv_context:
+            parts.append(conv_context)
+        parts.append(tone)
+
+        return "\n\n".join(parts)
 
     def _blender_ai_code(self, request):
         """Usa l'LLM per generare codice Python bpy che realizza la richiesta 3D.
@@ -302,6 +460,15 @@ class JarvisAgent:
                 actions_done.append(f'WEBCAM_GRID:{json.dumps(wc_data, ensure_ascii=False)}')
                 speech = "Apro le webcam del mondo in griglia."
                 actions_done.append(f'SPEECH:{speech}')
+        # Home Assistant dashboard widget (PRIMA della webcam — evita conflitti)
+        if not actions_done and ((
+            any(w in lower for w in ['home assistant', 'homeassistant', 'homeassitetn', 'homeassiste'])
+            or any(w.startswith('home') for w in lower.split())
+            or ' ha ' in lower or lower.startswith('ha ') or lower.endswith(' ha') or lower == 'ha'
+        ) and any(w in lower for w in ['dashboard', 'apri', 'widget', 'mostra', 'apre', 'mostrami', 'dasboard', 'fammi vedere', 'apre'])):
+            actions_done.append('HA_DASHBOARD:')
+            speech = "Apro la dashboard di Home Assistant."
+            actions_done.append(f'SPEECH:{speech}')
 
         # invia email (PRIORITÀ — prima di calendario, per evitare falsi positivi)
         if not actions_done and any(w in lower for w in ['invia email', 'invia una email', 'manda email', 'manda una email', 'spedisci email']):
@@ -743,28 +910,23 @@ class JarvisAgent:
 
         # Se azione diretta eseguita → rispondi subito senza chiamare LLM
         if actions_done:
-            # Separa SPEECH: dal resto delle actions
             speech_msg = next((a[7:] for a in actions_done if a.startswith('SPEECH:')), None)
             filtered = [a for a in actions_done if not a.startswith('SPEECH:')]
-            # Se c'è SPEECH usa quello, altrimenti stringa vuota
-            # (speak("") non parla — evita riassunti automatici)
             reply = speech_msg or ""
             self.history.append({"role": "user", "content": user_message})
             self.history.append({"role": "assistant", "content": reply or "✅"})
             if len(self.history) > 40:
                 self.history = self.history[-40:]
             memory.log_conversation("assistant", reply or "✅")
+            self._update_conversation_summary(user_message, reply)
             return reply, filtered
 
-        # 2. carica contesto memoria
-        memory_context = memory.get_context_for_prompt(user_message, max_items=3)
-
-        # 3. costruisci messaggi
+        # 2. costruisci system prompt avanzato (memoria + grafo + tono + contesto)
+        system_msg = self._build_system_prompt(user_message)
         self.history.append({"role": "user", "content": user_message})
         if len(self.history) > 40:
             self.history = self.history[-40:]
 
-        system_msg = SYSTEM_PROMPT + "\n\n" + memory_context
         messages = [{"role": "system", "content": system_msg}] + self.history
 
         if self._needs_tools(user_message):
@@ -772,12 +934,19 @@ class JarvisAgent:
             reply, tool_actions = self._agentic_loop(messages, user_message)
             self.history.append({"role": "assistant", "content": reply or "✅"})
             memory.log_conversation("assistant", reply or "✅")
+            self._update_conversation_summary(user_message, reply)
             return reply, (actions_done + tool_actions)
 
-        # ── Chat normale: completion semplice SENZA tool (no 400, no rate-limit extra) ──
+        # ── Chat normale: completion semplice ──
         chosen_model = _detect_complexity(user_message) or self.cfg["groq"]["model"]
+        topic = self._detect_topic(user_message)
+        temp = float(self.cfg["groq"]["temperature"])
+        if topic == "code":
+            temp = min(temp, 0.3)  # più basso = più preciso
+        elif topic == "wellbeing":
+            temp = max(temp, 0.7)  # più alto = più creativo/caldo
         payload = {"model": chosen_model, "messages": messages,
-                   "temperature": float(self.cfg["groq"]["temperature"]), "max_tokens": 2048}
+                   "temperature": temp, "max_tokens": 2048}
         headers = {"Authorization": f"Bearer {self.cfg['groq']['api_key']}", "Content-Type": "application/json"}
         try:
             resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=45)
@@ -786,6 +955,7 @@ class JarvisAgent:
             reply = f"[Errore connessione] {e}"
         self.history.append({"role": "assistant", "content": reply})
         memory.log_conversation("assistant", reply)
+        self._update_conversation_summary(user_message, reply)
         return reply, actions_done
 
     def _needs_tools(self, msg):
@@ -803,21 +973,25 @@ class JarvisAgent:
 
     def _relevant_tools(self, user_message):
         """Seleziona un sottoinsieme rilevante di TOOLS_SCHEMA per non superare i
-        limiti di token (lo schema completo da 100+ tool è troppo grande)."""
+        limiti di token (lo schema completo da 100+ tool è troppo grande).
+        I memory tool sono sempre inclusi perché il system prompt li richiama esplicitamente."""
         low = user_message.lower()
-        def names(schema): return [t for t in schema]
         is_blender = any(w in low for w in ['blender','render','3d','modell','oggetto 3d','scena 3d','avatar 3d','polyhaven','hdri'])
+        memory_tools = []
         subset = []
         for t in TOOLS_SCHEMA:
             n = t["function"]["name"]
-            if is_blender:
+            if n.startswith("memory_"):
+                memory_tools.append(t)
+            elif is_blender:
                 if n.startswith("blender_"):
                     subset.append(t)
             else:
                 if not n.startswith("blender_"):
                     subset.append(t)
         # Groq ha un limite pratico: tieni max ~24 tool
-        return subset[:24] if subset else TOOLS_SCHEMA[:24]
+        result = memory_tools + subset
+        return result[:24] if result else TOOLS_SCHEMA[:24]
 
     def _agentic_loop(self, messages, user_message, max_iters=4):
         """Loop di tool-calling nativo Groq: il modello decide quali tool chiamare,
@@ -899,6 +1073,9 @@ class JarvisAgent:
                         execute_tool("blender_focus_view", {})
                         execute_tool("blender_screenshot", {"save_path": "/tmp/blender_viewport.png"})
                     actions.append(f"IMAGE:{IMG_TOOLS[fname]}")
+                # Home Assistant dashboard → widget
+                if fname == "ha_dashboard":
+                    actions.append("HA_DASHBOARD:")
                 # Rimanda il risultato al modello
                 msgs.append({
                     "role": "tool",
@@ -952,24 +1129,23 @@ class JarvisAgent:
         actions_done = self._detect_direct_actions(user_message)
         memory.log_conversation("user", user_message)
 
-        # Se azione diretta eseguita → rispondi subito senza chiamare LLM
         if actions_done:
             speech_msg = next((a[7:] for a in actions_done if a.startswith('SPEECH:')), None)
             filtered = [a for a in actions_done if not a.startswith('SPEECH:')]
-            reply = speech_msg or ""  # vuoto = nessun TTS, nessun riassunto
+            reply = speech_msg or ""
             self.history.append({"role": "user", "content": user_message})
             self.history.append({"role": "assistant", "content": reply or "✅"})
             if len(self.history) > 40:
                 self.history = self.history[-40:]
             memory.log_conversation("assistant", reply or "✅")
+            self._update_conversation_summary(user_message, reply)
             return reply, 0.0
 
-        memory_context = memory.get_context_for_prompt(user_message, max_items=3)
+        system_msg = self._build_system_prompt(user_message)
         self.history.append({"role": "user", "content": user_message})
         if len(self.history) > 40:
             self.history = self.history[-40:]
 
-        system_msg = SYSTEM_PROMPT + "\n\n" + memory_context
         messages = [{"role": "system", "content": system_msg}] + self.history
 
         headers = {
@@ -978,10 +1154,16 @@ class JarvisAgent:
         }
 
         chosen_model = _detect_complexity(user_message) or self.cfg["groq"]["model"]
+        topic = self._detect_topic(user_message)
+        temp = float(self.cfg["groq"]["temperature"])
+        if topic == "code":
+            temp = min(temp, 0.3)
+        elif topic == "wellbeing":
+            temp = max(temp, 0.7)
         payload = {
             "model": chosen_model,
             "messages": messages,
-            "temperature": float(self.cfg["groq"]["temperature"]),
+            "temperature": temp,
             "max_tokens": 2048,
             "stream": True
         }
@@ -997,10 +1179,10 @@ class JarvisAgent:
             if not resp.ok:
                 err = resp.json() if resp.headers.get('content-type','').startswith('application/json') else {}
                 msg = err.get('error', {}).get('message', resp.text[:200])
-                # Fallback a Ollama (non-streaming)
                 if self.cfg.get("ollama", {}).get("enabled", False):
                     print("[INFO] Groq stream fallito, provo Ollama...")
                     reply = self._ollama_chat(messages, payload)
+                    self._update_conversation_summary(user_message, reply)
                     return reply, round(time.time()-t0, 2)
                 return f"[Errore Groq {resp.status_code}] {msg}", round(time.time()-t0, 2)
 
@@ -1023,14 +1205,15 @@ class JarvisAgent:
             elapsed = round(time.time() - t0, 2)
             self.history.append({"role": "assistant", "content": full_reply})
             memory.log_conversation("assistant", full_reply)
+            self._update_conversation_summary(user_message, full_reply)
             return full_reply, elapsed
 
         except Exception as e:
             print(f"[Groq stream exception] {e}")
-            # Fallback a Ollama (non-streaming)
             if self.cfg.get("ollama", {}).get("enabled", False):
                 print("[INFO] Groq stream fallito, provo Ollama...")
                 reply = self._ollama_chat(messages, payload)
+                self._update_conversation_summary(user_message, reply)
                 return reply, round(time.time()-t0, 2)
             return f"[Errore connessione] {e}", round(time.time()-t0, 2)
 
