@@ -27,6 +27,17 @@ from jarvis_computer_use import (mouse_move, mouse_click, mouse_drag, mouse_scro
     get_screen_resolution, computer_use_action)
 from jarvis_rag import rag
 from jarvis_approval import approval, check_and_approve
+# ── nuovi moduli v9.0 ──
+from jarvis_goals import (create_goal, list_goals, update_key_result, add_key_result,
+    get_goal_detail, delete_goal, archive_goal)
+from jarvis_providers import (list_providers, set_provider, set_provider_model,
+    switch_active, get_active_provider, chat_completion, estimate_cost)
+from jarvis_network import (public_ip, ip_geolocation, ping_test, dns_lookup,
+    port_check, bandwidth_speedtest, connectivity_summary)
+from jarvis_mcp import (list_servers, enable_server, disable_server, add_server,
+    remove_server, call_tool, list_tools)
+from jarvis_homeassistant import (ha_get_config, ha_get_states, ha_get_state,
+    ha_call_service, ha_fire_event, ha_get_services, ha_get_history, ha_get_logbook)
 # ── Blender MCP (opzionale — non blocca se Blender è chiuso) ──
 try:
     from jarvis_blender import (
@@ -179,6 +190,37 @@ TOOLS_SCHEMA = [
     {"type":"function","function":{"name":"blender_screenshot","description":"Cattura screenshot del viewport 3D","parameters":{"type":"object","properties":{"save_path":{"type":"string","default":"/tmp/blender_viewport.png"}}}}},
     {"type":"function","function":{"name":"blender_focus_view","description":"Material preview + inquadra tutti gli oggetti nel viewport","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"blender_setup_avatar","description":"Importa l'avatar RPM con luci e camera ritratto","parameters":{"type":"object","properties":{}}}},
+    # ── Goals/OKR v9.0 ──
+    {"type":"function","function":{"name":"goals_create","description":"Crea un obiettivo con Key Results misurabili (OKR)","parameters":{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string","default":""},"key_results":{"type":"array","items":{"type":"string"},"description":"Lista di key results misurabili"},"priority":{"type":"string","enum":["low","medium","high"],"default":"medium"}},"required":["title"]}}},
+    {"type":"function","function":{"name":"goals_list","description":"Elenca obiettivi attivi, completati o archiviati","parameters":{"type":"object","properties":{"status":{"type":"string","enum":["active","completed","archived"],"default":""}}}}},
+    {"type":"function","function":{"name":"goals_detail","description":"Dettaglio obiettivo con progresso key results","parameters":{"type":"object","properties":{"goal_id":{"type":"integer"}},"required":["goal_id"]}}},
+    {"type":"function","function":{"name":"goals_update_kr","description":"Aggiorna progresso di un Key Result","parameters":{"type":"object","properties":{"goal_id":{"type":"integer"},"kr_id":{"type":"integer"},"current":{"type":"integer"}},"required":["goal_id","kr_id","current"]}}},
+    {"type":"function","function":{"name":"goals_add_kr","description":"Aggiunge un Key Result a un obiettivo","parameters":{"type":"object","properties":{"goal_id":{"type":"integer"},"description":{"type":"string"},"target":{"type":"integer","default":100}},"required":["goal_id","description"]}}},
+    {"type":"function","function":{"name":"goals_delete","description":"Elimina un obiettivo","parameters":{"type":"object","properties":{"goal_id":{"type":"integer"}},"required":["goal_id"]}}},
+    {"type":"function","function":{"name":"goals_archive","description":"Archivia un obiettivo completato","parameters":{"type":"object","properties":{"goal_id":{"type":"integer"}},"required":["goal_id"]}}},
+    # ── Providers v9.0 (Multi-LLM Switchboard) ──
+    {"type":"function","function":{"name":"providers_list","description":"Elenca provider LLM e loro stato","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"providers_switch","description":"Cambia provider LLM attivo (groq, ollama, openai, gemini, anthropic)","parameters":{"type":"object","properties":{"provider":{"type":"string","enum":["groq","ollama","openai","gemini","anthropic"]}},"required":["provider"]}}},
+    {"type":"function","function":{"name":"providers_set_model","description":"Cambia modello per un provider","parameters":{"type":"object","properties":{"provider":{"type":"string"},"model":{"type":"string"}},"required":["provider","model"]}}},
+    # ── Network v9.0 ──
+    {"type":"function","function":{"name":"network_public_ip","description":"Mostra IP pubblico e geolocalizzazione","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"network_ping","description":"Test ping verso un host","parameters":{"type":"object","properties":{"host":{"type":"string","default":"8.8.8.8"}}}}},
+    {"type":"function","function":{"name":"network_dns","description":"Lookup DNS per un dominio","parameters":{"type":"object","properties":{"domain":{"type":"string","default":"google.com"}}}}},
+    {"type":"function","function":{"name":"network_speedtest","description":"Test velocità connessione","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"network_connectivity","description":"Report completo connettività internet","parameters":{"type":"object","properties":{}}}},
+    # ── World Map ──
+    {"type":"function","function":{"name":"open_world_map","description":"Griglia webcam mondo: Milano, Venezia, Tokyo, Berlino, New York, Sydney","parameters":{"type":"object","properties":{}}}},
+    # ── MCP v9.0 ──
+    {"type":"function","function":{"name":"mcp_list","description":"Elenca server MCP configurati","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"mcp_enable","description":"Attiva un server MCP (github, slack, filesystem, ecc.)","parameters":{"type":"object","properties":{"name":{"type":"string"},"env":{"type":"object"}},"required":["name"]}}},
+    {"type":"function","function":{"name":"mcp_disable","description":"Disattiva un server MCP","parameters":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}},
+    {"type":"function","function":{"name":"mcp_tools","description":"Elenca tools disponibili su un server MCP","parameters":{"type":"object","properties":{"server":{"type":"string"}},"required":["server"]}}},
+    {"type":"function","function":{"name":"mcp_call","description":"Chiama un tool su un server MCP","parameters":{"type":"object","properties":{"server":{"type":"string"},"tool":{"type":"string"},"args":{"type":"object"}},"required":["server","tool"]}}},
+    # ── Home Assistant v9.0 ──
+    {"type":"function","function":{"name":"ha_config","description":"Mostra configurazione Home Assistant (versione, nome, unità, fuso orario)","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"ha_states","description":"Elenca tutte le entità Home Assistant con il loro stato attuale, raggruppate per dominio","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"ha_state","description":"Ottiene lo stato di una specifica entità Home Assistant","parameters":{"type":"object","properties":{"entity_id":{"type":"string","description":"ID entità (es. light.soggiorno, sensor.temperatura)"}},"required":["entity_id"]}}},
+    {"type":"function","function":{"name":"ha_service","description":"Chiama un servizio Home Assistant (es. accendi/spegni luci, imposta termostato)","parameters":{"type":"object","properties":{"domain":{"type":"string","description":"Dominio del servizio (es. light, switch, climate, media_player)"},"service":{"type":"string","description":"Nome servizio (es. turn_on, turn_off, set_temperature)"},"data":{"type":"object","description":"Parametri aggiuntivi (es. brightness, temperature)"}},"required":["domain","service"]}}},
 ]
 
 def _run(cmd):
@@ -450,6 +492,132 @@ def rag_search_tool(query="", limit=5, **_): return rag.search(query, limit)
 def rag_list_tool(**_): return rag.list_documents()
 def rag_stats_tool(**_): return rag.stats()
 
+# ── GOALS / OKR v9.0 ──
+def goals_create_tool(title="", description="", key_results=None, priority="medium", **_):
+    return create_goal(title, description, key_results or [], priority=priority)
+def goals_list_tool(status="", **_):
+    return list_goals(status if status else None)
+def goals_detail_tool(goal_id=0, **_): return get_goal_detail(goal_id)
+def goals_update_kr_tool(goal_id=0, kr_id=0, current=0, **_):
+    return update_key_result(goal_id, kr_id, current)
+def goals_add_kr_tool(goal_id=0, description="", target=100, **_):
+    return add_key_result(goal_id, description, target)
+def goals_delete_tool(goal_id=0, **_): return delete_goal(goal_id)
+def goals_archive_tool(goal_id=0, **_): return archive_goal(goal_id)
+
+# ── PROVIDERS v9.0 ──
+def providers_list_tool(**_): return list_providers()
+def providers_switch_tool(provider="", **_): return switch_active(provider)
+def providers_set_model_tool(provider="", model="", **_): return set_provider_model(provider, model)
+
+# ── NETWORK v9.0 ──
+def network_public_ip_tool(**_):
+    ip = public_ip()
+    geo = ip_geolocation(ip)
+    return f"🌐 IP Pubblico: {ip}\n📍 Localizzazione: {geo}"
+def network_ping_tool(host="8.8.8.8", **_): return ping_test(host)
+def network_dns_tool(domain="google.com", **_): return dns_lookup(domain)
+def network_speedtest_tool(**_): return bandwidth_speedtest()
+def network_connectivity_tool(**_): return connectivity_summary()
+
+# ── HOME ASSISTANT v9.0 ──
+def ha_states_tool(**_):
+    data = ha_get_states()
+    if isinstance(data, dict) and "error" in data:
+        return f"⚠ Home Assistant: {data['error']}"
+    lines = [f"🏠 Home Assistant — {len(data)} entità disponibili:"]
+    domains = {}
+    for e in data:
+        domain = e["entity_id"].split(".")[0]
+        domains.setdefault(domain, []).append(e)
+    for domain, entities in sorted(domains.items()):
+        lines.append(f"\n  📂 {domain} ({len(entities)}):")
+        for e in entities[:3]:
+            state = e.get("state", "")
+            name = e["attributes"].get("friendly_name", e["entity_id"])
+            lines.append(f"    • {name} → {state}")
+        if len(entities) > 3:
+            lines.append(f"    ... e altri {len(entities)-3}")
+    return "\n".join(lines)
+def ha_state_tool(entity_id="", **_):
+    if not entity_id:
+        return "⚠ Specifica entity_id (es. light.soggiorno)"
+    data = ha_get_state(entity_id)
+    if isinstance(data, dict) and "error" in data:
+        return f"⚠ {data['error']}"
+    attrs = data.get("attributes", {})
+    return (
+        f"🏠 {data['entity_id']}\n"
+        f"  Stato: {data['state']}\n"
+        f"  Nome: {attrs.get('friendly_name', '—')}\n"
+        f"  Ultimo cambio: {data.get('last_changed', '—')}"
+    )
+def ha_service_tool(domain="", service="", data=None, **_):
+    if not domain or not service:
+        return "⚠ Specifica domain e service (es. light/turn_on)"
+    result = ha_call_service(domain, service, data)
+    if isinstance(result, dict) and "error" in result:
+        return f"⚠ {result['error']}"
+    return f"✅ Comando '{domain}/{service}' eseguito con successo"
+def ha_config_tool(**_):
+    cfg = ha_get_config()
+    if isinstance(cfg, dict) and "error" in cfg:
+        return f"⚠ {cfg['error']}"
+    return (
+        f"🏠 Configurazione Home Assistant:\n"
+        f"  Versione: {cfg.get('version', '—')}\n"
+        f"  Nome installazione: {cfg.get('location_name', '—')}\n"
+        f"  Unità: {cfg.get('unit_system', {}).get('length', '—')}\n"
+        f"  Fuso orario: {cfg.get('time_zone', '—')}\n"
+        f"  Modalità: {'Modifica' if cfg.get('config_source') == 'storage' else 'YAML'}"
+    )
+
+# ── WORLD MAP v9.0 ──
+def open_world_map(**_):
+    """Cerca webcam live YouTube per 5 città e restituisce dati per la griglia"""
+    import requests as _req, urllib.parse as _up, re as _re
+    # Known working 24/7 webcam YouTube IDs per città (fallback se YouTube search fallisce)
+    KNOWN_CAMS = {
+        "Milano": "28BXLXTP63E",
+        "Venezia": "CMn6xQXuSjI",
+        "Tokyo": "8H3nRCFVR6Y",
+        "Berlino": "iaTAp8FxtHw",
+        "New York": "VGnFLdQW39A",
+        "Sydney": "DkY66Fy4r4M",
+    }
+    cities = [
+        {"name": "Milano", "lat": 45.4642, "lon": 9.1900},
+        {"name": "Venezia", "lat": 45.4408, "lon": 12.3155},
+        {"name": "Tokyo", "lat": 35.6762, "lon": 139.6503},
+        {"name": "Berlino", "lat": 52.5200, "lon": 13.4050},
+        {"name": "New York", "lat": 40.7128, "lon": -74.0060},
+        {"name": "Sydney", "lat": -33.8688, "lon": 151.2093},
+    ]
+    webcams = []
+    for c in cities:
+        # Usa known cam (testato funzionante) se disponibile
+        video_id = KNOWN_CAMS.get(c["name"])
+        # Se non c'è known cam, cerca su YouTube
+        if not video_id:
+            try:
+                q = _up.quote(f'{c["name"]} webcam diretta 4K')
+                yt_r = _req.get(f'https://www.youtube.com/results?search_query={q}',
+                    timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+                ids = _re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', yt_r.text)
+                if ids:
+                    video_id = ids[0]
+            except Exception:
+                pass
+        webcams.append({"name": c["name"], "lat": c["lat"], "lon": c["lon"], "video_id": video_id})
+    return webcams  # lista di dict per WEBCAM_GRID
+
+# ── MCP v9.0 ──
+def mcp_list_tool(**_): return list_servers()
+def mcp_enable_tool(name="", env=None, **_): return enable_server(name, env)
+def mcp_disable_tool(name="", **_): return disable_server(name)
+def mcp_tools_tool(server="", **_): return list_tools(server)
+def mcp_call_tool(server="", tool="", args=None, **_): return call_tool(server, tool, args)
+
 # ── APPROVAL ──
 def approval_pending_tool(**_): return approval.get_pending()
 def approval_approve_tool(request_id="", auto_future=False, **_):
@@ -500,6 +668,25 @@ HANDLERS = {
     "rag_search":rag_search_tool,"rag_list":rag_list_tool,"rag_stats":rag_stats_tool,
     # Approval
     "approval_pending":approval_pending_tool,"approval_approve":approval_approve_tool,"approval_deny":approval_deny_tool,
+    # Goals v9.0
+    "goals_create":goals_create_tool,"goals_list":goals_list_tool,"goals_detail":goals_detail_tool,
+    "goals_update_kr":goals_update_kr_tool,"goals_add_kr":goals_add_kr_tool,
+    "goals_delete":goals_delete_tool,"goals_archive":goals_archive_tool,
+    # Providers v9.0
+    "providers_list":providers_list_tool,"providers_switch":providers_switch_tool,
+    "providers_set_model":providers_set_model_tool,
+    # Network v9.0
+    "network_public_ip":network_public_ip_tool,"network_ping":network_ping_tool,
+    "network_dns":network_dns_tool,"network_speedtest":network_speedtest_tool,
+    "network_connectivity":network_connectivity_tool,
+    # MCP v9.0
+    "mcp_list":mcp_list_tool,"mcp_enable":mcp_enable_tool,"mcp_disable":mcp_disable_tool,
+    "mcp_tools":mcp_tools_tool,    "mcp_call":mcp_call_tool,
+    # Home Assistant v9.0
+    "ha_config":ha_config_tool,"ha_states":ha_states_tool,
+    "ha_state":ha_state_tool,"ha_service":ha_service_tool,
+    # World Map
+    "open_world_map":open_world_map,
 }
 
 # ── Blender tools (aggiunti a runtime se modulo disponibile) ──────────────

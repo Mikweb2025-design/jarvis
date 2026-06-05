@@ -71,6 +71,12 @@ CAPACITÀ:
 - Git: status, commit, branch, diff, log
 - Web search: DuckDuckGo con risultati completi
 - Approval flow: approvazione per azioni sensibili
+- Goals/OKR: crea obiettivi con key results misurabili, traccia progressi
+- Providers: switcha tra Groq, Ollama, OpenAI, Gemini, Anthropic
+- Network diagnostics: IP pubblico, ping, DNS, speed test
+- World Map: griglia webcam mondo (Milano, Venezia, Tokyo, Berlino, New York, Sydney)
+- MCP (Model Context Protocol): connetti server esterni (GitHub, Slack, filesystem)
+- Home Assistant: controlla smart home (luci, switch, sensori, termostato) su mikweb.info. ha_states per lista entità, ha_service per comandi
 - Blender 3D: controlla Blender via MCP. Hai questi tool: blender_status,
   blender_scene, blender_execute (esegui QUALSIASI codice bpy), blender_create,
   blender_delete, blender_material, blender_render, blender_screenshot,
@@ -103,6 +109,11 @@ REGOLE:
 10. Per automazione browser avanzata usa browser_navigate e browser_extract
 11. Per controllare mouse/tastiera usa computer_mouse_click, computer_keyboard_type
 12. Per cercare documenti usa rag_search
+13. Goals/OKR: goals_create per obiettivi, goals_list per vedere progressi, goals_update_kr per aggiornare key results
+14. Providers: providers_switch per cambiare LLM (groq/ollama/openai/gemini/anthropic), providers_list per vedere stato
+15. Network: network_connectivity per diagnostica internet, network_speedtest per velocità
+16. MCP: mcp_list per vedere server, mcp_enable per attivare (github, slack, filesystem), mcp_call per usare tool
+17. Home Assistant: ha_states per vedere lo stato di tutte le entità, ha_state per un'entità specifica, ha_service per controllare luci, switch, termostato, ecc. (domain=light, switch, climate, media_player...). Usa ha_config per info sulla versione HA
 """
 
 class JarvisAgent:
@@ -283,6 +294,14 @@ class JarvisAgent:
 
             return actions_done  # Blender ha priorità — esce subito
         # ── FINE BLENDER ───────────────────────────────────────────────────
+
+        # world map: "aprimi il mondo" — griglia webcam
+        if not actions_done and any(w in lower for w in ['aprimi il mondo', 'apri il mondo', 'mostra il mondo', 'mondo', 'world map', 'apri mappa']):
+            wc_data = execute_tool('open_world_map', {})
+            if isinstance(wc_data, list) and len(wc_data) > 0:
+                actions_done.append(f'WEBCAM_GRID:{json.dumps(wc_data, ensure_ascii=False)}')
+                speech = "Apro le webcam del mondo in griglia."
+                actions_done.append(f'SPEECH:{speech}')
 
         # invia email (PRIORITÀ — prima di calendario, per evitare falsi positivi)
         if not actions_done and any(w in lower for w in ['invia email', 'invia una email', 'manda email', 'manda una email', 'spedisci email']):
