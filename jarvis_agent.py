@@ -976,15 +976,15 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
     def _relevant_tools(self, user_message):
         """Seleziona un sottoinsieme rilevante di TOOLS_SCHEMA per non superare i
         limiti di token (lo schema completo da 100+ tool è troppo grande).
-        I memory tool sono sempre inclusi perché il system prompt li richiama esplicitamente."""
+        I memory e HA tool sono sempre inclusi perché critici per le azioni."""
         low = user_message.lower()
         is_blender = any(w in low for w in ['blender','render','3d','modell','oggetto 3d','scena 3d','avatar 3d','polyhaven','hdri'])
-        memory_tools = []
+        priority_tools = []  # memory_*, ha_* — sempre inclusi
         subset = []
         for t in TOOLS_SCHEMA:
             n = t["function"]["name"]
-            if n.startswith("memory_"):
-                memory_tools.append(t)
+            if n.startswith("memory_") or n.startswith("ha_"):
+                priority_tools.append(t)
             elif is_blender:
                 if n.startswith("blender_"):
                     subset.append(t)
@@ -992,7 +992,7 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
                 if not n.startswith("blender_"):
                     subset.append(t)
         # Groq ha un limite pratico: tieni max ~24 tool
-        result = memory_tools + subset
+        result = priority_tools + subset
         return result[:24] if result else TOOLS_SCHEMA[:24]
 
     def _agentic_loop(self, messages, user_message, max_iters=4):
