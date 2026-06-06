@@ -574,7 +574,7 @@ def ha_state_tool(entity_id="", **_):
     )
 def ha_service_tool(domain="", service="", entity_id="", data=None, **_):
     if not domain or not service:
-        return "⚠ Specifica domain e service (es. light/turn_on)"
+        return "⚠ Specifica domain e service"
     payload = dict(data or {})
     if entity_id and "entity_id" not in payload:
         payload["entity_id"] = entity_id
@@ -583,12 +583,11 @@ def ha_service_tool(domain="", service="", entity_id="", data=None, **_):
     result = ha_call_service(domain, service, payload)
     if isinstance(result, dict) and "error" in result:
         return f"⚠ {result['error']}"
-    # Verifica che il comando abbia effetto
     if entity_id:
         state = ha_get_state(entity_id)
         if isinstance(state, dict) and "error" not in state:
-            return f"✅ Comando '{domain}/{service}' eseguito — {entity_id} ora è '{state['state']}'"
-    return f"✅ Comando '{domain}/{service}' eseguito su {payload.get('entity_id', '?')}"
+            return f"✅ {entity_id} → {state['state']}"
+    return "✅ fatto"
 def ha_config_tool(**_):
     cfg = ha_get_config()
     if isinstance(cfg, dict) and "error" in cfg:
