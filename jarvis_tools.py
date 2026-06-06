@@ -37,7 +37,12 @@ from jarvis_network import (public_ip, ip_geolocation, ping_test, dns_lookup,
 from jarvis_mcp import (list_servers, enable_server, disable_server, add_server,
     remove_server, call_tool, list_tools)
 from jarvis_homeassistant import (ha_get_config, ha_get_states, ha_get_state,
-    ha_call_service, ha_fire_event, ha_get_services, ha_get_history, ha_get_logbook)
+    ha_call_service, ha_fire_event, ha_get_services, ha_get_history, ha_get_logbook,
+    ha_dashboard_url)
+# ── Trend Monitoring v9.3 ──
+from jarvis_trends import trends_search as _trends_search, trending_now as _trending_now
+# ── Telegram v9.3 ──
+from jarvis_telegram import send as _telegram_send, status as _telegram_status
 # ── Blender MCP (opzionale — non blocca se Blender è chiuso) ──
 try:
     from jarvis_blender import (
@@ -172,9 +177,13 @@ TOOLS_SCHEMA = [
     # RAG
     {"type":"function","function":{"name":"rag_add_document","description":"Aggiungi documento al database RAG","parameters":{"type":"object","properties":{"title":{"type":"string"},"content":{"type":"string"},"source":{"type":"string","default":""}},"required":["title","content"]}}},
     {"type":"function","function":{"name":"rag_add_file","description":"Aggiungi file al database RAG","parameters":{"type":"object","properties":{"file_path":{"type":"string"}},"required":["file_path"]}}},
-    {"type":"function","function":{"name":"rag_search","description":"Cerca documenti nel database RAG","parameters":{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer","default":5}},"required":["query"]}}},
+    {"type":"function","function":{"name":"rag_add_folder","description":"Indicizza tutti i file in una cartella nel database RAG","parameters":{"type":"object","properties":{"folder_path":{"type":"string"},"recursive":{"type":"boolean","default":True}},"required":["folder_path"]}}},
+    {"type":"function","function":{"name":"rag_search","description":"Cerca documenti nel database RAG (ricerca ibrida FTS + semantica)","parameters":{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer","default":5}},"required":["query"]}}},
+    {"type":"function","function":{"name":"rag_semantic_search","description":"Cerca documenti con sola similarità semantica (cosine similarity)","parameters":{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer","default":5}},"required":["query"]}}},
     {"type":"function","function":{"name":"rag_list","description":"Lista documenti nel database RAG","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"rag_stats","description":"Statistiche database RAG","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"rag_delete","description":"Elimina un documento dal database RAG","parameters":{"type":"object","properties":{"doc_id":{"type":"integer"}},"required":["doc_id"]}}},
+    {"type":"function","function":{"name":"rag_delete_all","description":"Elimina TUTTI i documenti dal database RAG","parameters":{"type":"object","properties":{}}}},
     # Approval
     {"type":"function","function":{"name":"approval_pending","description":"Lista richieste approvazione pending","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"approval_approve","description":"Approva richiesta","parameters":{"type":"object","properties":{"request_id":{"type":"string"},"auto_future":{"type":"boolean","default":False}},"required":["request_id"]}}},
@@ -220,7 +229,13 @@ TOOLS_SCHEMA = [
     {"type":"function","function":{"name":"ha_config","description":"Mostra configurazione Home Assistant (versione, nome, unità, fuso orario)","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"ha_states","description":"Elenca tutte le entità Home Assistant con il loro stato attuale, raggruppate per dominio","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"ha_state","description":"Ottiene lo stato di una specifica entità Home Assistant","parameters":{"type":"object","properties":{"entity_id":{"type":"string","description":"ID entità (es. light.soggiorno, sensor.temperatura)"}},"required":["entity_id"]}}},
-    {"type":"function","function":{"name":"ha_service","description":"Chiama un servizio Home Assistant (es. accendi/spegni luci, imposta termostato)","parameters":{"type":"object","properties":{"domain":{"type":"string","description":"Dominio del servizio (es. light, switch, climate, media_player)"},"service":{"type":"string","description":"Nome servizio (es. turn_on, turn_off, set_temperature)"},"data":{"type":"object","description":"Parametri aggiuntivi (es. brightness, temperature)"}},"required":["domain","service"]}}},
+    {"type":"function","function":{"name":"ha_service","description":"Chiama un servizio Home Assistant (es. accendi/spegni luci, imposta termostato)","parameters":{"type":"object","properties":{"domain":{"type":"string","description":"Dominio del servizio (es. light, switch, climate, media_player)"},"service":{"type":"string","description":"Nome servizio (es. turn_on, turn_off, set_temperature)"},"entity_id":{"type":"string","description":"ID entità da controllare (es. light.soggiorno, light.lampe1, switch.ventilatore)"},"data":{"type":"object","description":"Parametri aggiuntivi (es. brightness, temperature, rgb_color)"}},"required":["domain","service","entity_id"]}}},
+    {"type":"function","function":{"name":"ha_dashboard","description":"Apre la dashboard di Home Assistant nel browser","parameters":{"type":"object","properties":{}}}},
+    # ── Trends v9.3 ──
+    {"type":"function","function":{"name":"trends_search","description":"Cerca tendenze/trend attuali in una categoria (technology, ai, social, startup, opensource, german, italian)","parameters":{"type":"object","properties":{"category":{"type":"string","default":"technology"},"region":{"type":"string","default":"wt"},"max_results":{"type":"integer","default":10}},"required":["category"]}}},
+    {"type":"function","function":{"name":"trending_now","description":"Trend del momento — scorciatoia rapida per cosa sta trendendo ora","parameters":{"type":"object","properties":{"region":{"type":"string","default":"it"}}}}},
+    # ── Telegram v9.3 ──
+    {"type":"function","function":{"name":"telegram_send","description":"Invia un messaggio Telegram. chat_id opzionale (default: usa config.json)","parameters":{"type":"object","properties":{"message":{"type":"string"},"chat_id":{"type":"integer","default":0}},"required":["message"]}}},
 ]
 
 def _run(cmd):
@@ -488,9 +503,14 @@ def computer_resolution_tool(**_): return get_screen_resolution()
 def rag_add_document_tool(title="", content="", source="", **_):
     return rag.add_document(title, content, source)
 def rag_add_file_tool(file_path="", **_): return rag.add_file(file_path)
+def rag_add_folder_tool(folder_path="", recursive=True, **_):
+    return rag.add_folder(folder_path, recursive)
 def rag_search_tool(query="", limit=5, **_): return rag.search(query, limit)
+def rag_semantic_search_tool(query="", limit=5, **_): return rag.semantic_search(query, limit)
 def rag_list_tool(**_): return rag.list_documents()
 def rag_stats_tool(**_): return rag.stats()
+def rag_delete_tool(doc_id=0, **_): return rag.delete_document(doc_id)
+def rag_delete_all_tool(**_): return rag.delete_all()
 
 # ── GOALS / OKR v9.0 ──
 def goals_create_tool(title="", description="", key_results=None, priority="medium", **_):
@@ -552,13 +572,23 @@ def ha_state_tool(entity_id="", **_):
         f"  Nome: {attrs.get('friendly_name', '—')}\n"
         f"  Ultimo cambio: {data.get('last_changed', '—')}"
     )
-def ha_service_tool(domain="", service="", data=None, **_):
+def ha_service_tool(domain="", service="", entity_id="", data=None, **_):
     if not domain or not service:
         return "⚠ Specifica domain e service (es. light/turn_on)"
-    result = ha_call_service(domain, service, data)
+    payload = dict(data or {})
+    if entity_id and "entity_id" not in payload:
+        payload["entity_id"] = entity_id
+    if not payload.get("entity_id"):
+        return "⚠ Specifica l'entità da controllare (entity_id)"
+    result = ha_call_service(domain, service, payload)
     if isinstance(result, dict) and "error" in result:
         return f"⚠ {result['error']}"
-    return f"✅ Comando '{domain}/{service}' eseguito con successo"
+    # Verifica che il comando abbia effetto
+    if entity_id:
+        state = ha_get_state(entity_id)
+        if isinstance(state, dict) and "error" not in state:
+            return f"✅ Comando '{domain}/{service}' eseguito — {entity_id} ora è '{state['state']}'"
+    return f"✅ Comando '{domain}/{service}' eseguito su {payload.get('entity_id', '?')}"
 def ha_config_tool(**_):
     cfg = ha_get_config()
     if isinstance(cfg, dict) and "error" in cfg:
@@ -571,6 +601,8 @@ def ha_config_tool(**_):
         f"  Fuso orario: {cfg.get('time_zone', '—')}\n"
         f"  Modalità: {'Modifica' if cfg.get('config_source') == 'storage' else 'YAML'}"
     )
+def ha_dashboard_tool(**_):
+    return "✅ Aperta dashboard Home Assistant"
 
 # ── WORLD MAP v9.0 ──
 def open_world_map(**_):
@@ -624,6 +656,37 @@ def approval_approve_tool(request_id="", auto_future=False, **_):
     return approval.approve(request_id, auto_future)
 def approval_deny_tool(request_id="", **_): return approval.deny(request_id)
 
+# ── TRENDS v9.3 ──
+def trends_search_tool(category="technology", region="wt", max_results=10, **_):
+    result = _trends_search(category, region, max_results)
+    if result["status"] != "ok":
+        return f"⚠ {result.get('message', 'errore')}"
+    items = result["results"]
+    if not items:
+        return "🔍 Nessun trend trovato per questa categoria."
+    lines = [f"📊 TREND — {category.upper()} ({region}):"]
+    for i, r in enumerate(items[:max_results], 1):
+        lines.append(f"{i}. {r['title']}\n   {r['url']}\n   {r['snippet'][:120]}")
+    return "\n\n".join(lines)
+
+def trending_now_tool(region="it", **_):
+    result = _trending_now(region)
+    if result["status"] != "ok":
+        return f"⚠ {result.get('message', 'errore')}"
+    items = result["results"]
+    if not items:
+        return "🔍 Nessun trend trovato."
+    lines = [f"⚡ TRENDING ORA ({region.upper()}) — {len(items)} risultati:"]
+    for i, r in enumerate(items[:10], 1):
+        lines.append(f"{i}. {r['title']}\n   {r['snippet'][:120]}")
+    return "\n\n".join(lines)
+
+# ── TELEGRAM v9.3 ──
+def telegram_send_tool(message="", chat_id=0, **_):
+    if not message:
+        return "⚠ Inserisci un messaggio da inviare."
+    return _telegram_send(chat_id if chat_id else None, message)
+
 # ── DISPATCH ──
 HANDLERS = {
     "open_app":open_app,"open_url":open_url,"web_search":web_search,
@@ -659,13 +722,17 @@ HANDLERS = {
     "browser_playwright_click":browser_playwright_click_tool,"browser_playwright_fill":browser_playwright_fill_tool,
     "browser_screenshot":browser_screenshot_tool,
     # Computer Use
+    "computer_use_action":computer_use_action,
     "computer_mouse_move":computer_mouse_move_tool,"computer_mouse_click":computer_mouse_click_tool,
     "computer_mouse_drag":computer_mouse_drag_tool,"computer_keyboard_type":computer_keyboard_type_tool,
     "computer_keyboard_press":computer_keyboard_press_tool,"computer_keyboard_shortcut":computer_keyboard_shortcut_tool,
     "computer_mouse_position":computer_mouse_position_tool,"computer_resolution":computer_resolution_tool,
     # RAG
     "rag_add_document":rag_add_document_tool,"rag_add_file":rag_add_file_tool,
-    "rag_search":rag_search_tool,"rag_list":rag_list_tool,"rag_stats":rag_stats_tool,
+    "rag_add_folder":rag_add_folder_tool,
+    "rag_search":rag_search_tool,"rag_semantic_search":rag_semantic_search_tool,
+    "rag_list":rag_list_tool,"rag_stats":rag_stats_tool,
+    "rag_delete":rag_delete_tool,"rag_delete_all":rag_delete_all_tool,
     # Approval
     "approval_pending":approval_pending_tool,"approval_approve":approval_approve_tool,"approval_deny":approval_deny_tool,
     # Goals v9.0
@@ -685,8 +752,14 @@ HANDLERS = {
     # Home Assistant v9.0
     "ha_config":ha_config_tool,"ha_states":ha_states_tool,
     "ha_state":ha_state_tool,"ha_service":ha_service_tool,
+    "ha_dashboard":ha_dashboard_tool,
     # World Map
     "open_world_map":open_world_map,
+    # Trends v9.3
+    "trends_search":trends_search_tool,
+    "trending_now":trending_now_tool,
+    # Telegram v9.3
+    "telegram_send":telegram_send_tool,
 }
 
 # ── Blender tools (aggiunti a runtime se modulo disponibile) ──────────────
