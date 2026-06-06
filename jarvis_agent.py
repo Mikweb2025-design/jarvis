@@ -1064,6 +1064,8 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
                 fname = tc["function"]["name"]
                 try:
                     fargs = _json.loads(tc["function"].get("arguments") or "{}")
+                    if not isinstance(fargs, dict):
+                        fargs = {}
                 except Exception:
                     fargs = {}
                 tool_result = execute_tool(fname, fargs)

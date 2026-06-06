@@ -823,5 +823,7 @@ if _BLENDER_OK:
 def execute_tool(name, arguments):
     h = HANDLERS.get(name)
     if not h: return f"⚠ Tool '{name}' non trovato"
+    if not isinstance(arguments, dict):
+        arguments = {}
     try: return h(**arguments)
     except Exception as e: return f"⚠ Errore {name}: {e}"
