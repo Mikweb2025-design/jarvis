@@ -964,11 +964,13 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
         low = msg.lower()
         return any(w in low for w in [
             # blender / 3d
-            'blender', 'render', '3d', 'modell', 'avatar', 'scena', 'oggetto 3d', 'polyhaven', 'hdri',
+            'blender', 'render', '3d', 'modell', 'oggetto 3d', 'avatar', 'scena', 'oggetto 3d', 'polyhaven', 'hdri',
             # azioni macOS / tool
             'crea', 'fai', 'fammi', 'genera', 'costruisci', 'disegna', 'apri', 'cerca', 'manda',
             'invia', 'scrivi', 'screenshot', 'volume', 'luminos', 'calendario', 'evento',
             'email', 'mail', 'nota', 'promemoria', 'musica', 'file', 'cartella', 'git',
+            # home assistant
+            'accendi', 'spegni', 'luce', 'luci', 'termostato', 'home assistant',
         ])
 
     def _relevant_tools(self, user_message):
