@@ -18,6 +18,9 @@ from jarvis_browser import playwright_navigate, playwright_extract, playwright_s
 from jarvis_computer_use import computer_use_action, get_mouse_position, get_screen_resolution
 from jarvis_rag import rag
 from jarvis_approval import approval
+from jarvis_wake import JarvisWake
+from jarvis_trends import trends_search, trending_now
+from jarvis_telegram import start as telegram_start, send as telegram_send, status as telegram_status
 
 # Abilita WAL mode per SQLite (concorrenza migliorata)
 memory.db.execute("PRAGMA journal_mode=WAL")
@@ -33,6 +36,9 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 cfg   = load_config()
 agent = JarvisAgent(cfg)
 tts_engine = KokoroTTS(cfg)
+
+# ── WAKE WORD + DICTATION (disattivato) ──
+_wake = None
 
 # ── QWEN3-TTS: Worker dedicato con modello in RAM ──
 # MLX non è thread-safe: il modello deve essere usato solo nel thread che l'ha caricato
@@ -164,6 +170,20 @@ if cfg["tts"].get("qwen3_enabled", True):
 else:
     print("  [TTS] Qwen3-TTS disabilitato da config.json, uso Edge TTS")
     _tts_ready.set()
+
+# Auto-ingest documenti all'avvio
+try:
+    _rag_docs_dir = Path(__file__).parent / "data" / "documents"
+    if _rag_docs_dir.exists():
+        any_files = any(_rag_docs_dir.iterdir())
+        if any_files:
+            rag_st = rag.stats()
+            if rag_st["documents"] == 0:
+                print(f"  [RAG] Auto-ingest {_rag_docs_dir} ...")
+                result = rag.add_folder(str(_rag_docs_dir), recursive=True)
+                print(f"  [RAG] ✅ Indicizzati {result.get('indexed', 0)} file")
+except Exception as e:
+    print(f"  [RAG] Auto-ingest skip: {e}")
 
 # Lock per proteggere stato condiviso tra thread
 state_lock = threading.Lock()
@@ -338,8 +358,45 @@ class H(BaseHTTPRequestHandler):
         try:
             # Path senza query string (così "/?fresh=123" matcha come "/")
             _path_only = self.path.split("?", 1)[0]
+
+            # Serve static assets
+            if _path_only.startswith("/assets/"):
+                asset_path = Path(__file__).parent / _path_only.lstrip("/")
+                if asset_path.exists() and asset_path.is_file():
+                    ext_map = {".css":"text/css", ".js":"application/javascript", ".html":"text/html"}
+                    b = asset_path.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", ext_map.get(asset_path.suffix, "application/octet-stream"))
+                    self.send_header("Content-Length", str(len(b)))
+                    self.send_header("Cache-Control", "no-cache")
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(b)
+                    return
+                self._json(404, {"error": f"Asset not found: {_path_only}"})
+                return
+
+            # Serve page fragments
+            if _path_only.startswith("/pages/"):
+                page_path = Path(__file__).parent / _path_only.lstrip("/")
+                if page_path.exists() and page_path.is_file():
+                    b = page_path.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(b)))
+                    self.send_header("Cache-Control", "no-cache")
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(b)
+                    return
+                self._json(404, {"error": f"Page not found: {_path_only}"})
+                return
+
             if _path_only in ("/", "/index.html"):
-                p = Path(__file__).parent / "jarvis_app.html"
+                # Try new SPA first, fallback to old monolith
+                p = Path(__file__).parent / "index.html"
+                if not p.exists():
+                    p = Path(__file__).parent / "jarvis_app.html"
                 if p.exists():
                     b = p.read_bytes()
                     self.send_response(200)
@@ -353,7 +410,7 @@ class H(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(b)
                 else:
-                    self._json(404,{"error":"jarvis_app.html non trovato"})
+                    self._json(404,{"error":"index.html / jarvis_app.html non trovato"})
 
             elif self.path.startswith("/holographic_avatar.png"):
                 p = Path(__file__).parent / "holographic_avatar.png"
@@ -448,8 +505,10 @@ class H(BaseHTTPRequestHandler):
                 self.wfile.write(b)
 
             elif self.path=="/api/status":
+                rag_st = rag.stats()
                 self._json(200,{"status":"online","model":cfg["groq"]["model"],
-                    "voice":cfg["tts"].get("qwen3_voice", cfg["tts"].get("voice", "vivian")),"version":"9.0",
+                    "voice":cfg["tts"].get("qwen3_voice", cfg["tts"].get("voice", "vivian")),"version":"9.2",
+                    "rag":{"docs":rag_st["documents"],"chunks":rag_st["chunks"],"model":rag_st["model"]},
                     "time":datetime.now().isoformat()})
 
             elif self.path=="/api/sysinfo":
@@ -536,6 +595,35 @@ class H(BaseHTTPRequestHandler):
             elif self.path=="/api/computer/mouse":
                 self._json(200, {"position": get_mouse_position(), "resolution": get_screen_resolution()})
 
+            elif self.path=="/api/wake/status":
+                self._json(200, {"wake": False})
+
+            elif self.path=="/api/memory/graph":
+                if agent:
+                    self._json(200, agent.graph.get_stats())
+                else:
+                    self._json(200, {"entities": 0, "relations": 0})
+
+            elif _path_only == "/api/trends":
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                cat = qs.get("category", ["technology"])[0]
+                region = qs.get("region", ["wt"])[0]
+                max_r = int(qs.get("max_results", [10])[0])
+                result = trends_search(cat, region, max_r)
+                self._json(200, result)
+
+            elif self.path == "/api/telegram/status":
+                self._json(200, telegram_status())
+
+            elif self.path.startswith("/api/worldnews"):
+                from jarvis_worldnews import fetch_world_news
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                max_items = int(qs.get("max", [50])[0])
+                data = fetch_world_news(max_items)
+                self._json(200, data)
+
             else:
                 self._json(404,{"error":f"Non trovato: {self.path}"})
         except (BrokenPipeError, ConnectionResetError, OSError):
@@ -609,16 +697,24 @@ class H(BaseHTTPRequestHandler):
                     from jarvis_agent import GROQ_URL, SYSTEM_PROMPT
 
                     memory_context = memory.get_context_for_prompt(msg, max_items=3)
+                    # RAG context
+                    rag_context = ""
+                    if len(msg.split()) >= 3:
+                        try:
+                            rag_context = rag.query_context(msg, max_chunks=3)
+                        except Exception as e:
+                            print(f"[RAG] stream error: {e}")
                     memory.log_conversation("user", msg)
                     agent.history.append({"role": "user", "content": msg})
                     if len(agent.history) > 40:
                         agent.history = agent.history[-40:]
 
-                    system_msg = SYSTEM_PROMPT + "\n\n" + memory_context
+                    system_parts = [SYSTEM_PROMPT]
+                    if rag_context:
+                        system_parts.append(rag_context)
+                    system_parts.append(memory_context)
+                    system_msg = "\n\n".join(system_parts)
                     messages = [{"role": "system", "content": system_msg}] + agent.history
-
-                    if False:  # placeholder rimosso
-                        pass
                     
                     headers = {
                         "Authorization": f"Bearer {cfg['groq']['api_key']}",
@@ -882,7 +978,11 @@ class H(BaseHTTPRequestHandler):
                         elif k=="speed": cfg["tts"]["speed"]=float(v)
                         elif k=="qwen3_voice": cfg["tts"]["qwen3_voice"]=v; cfg["tts"]["voice"]=v
                         elif k=="qwen3_language": cfg["tts"]["qwen3_language"]=v
+                        elif k=="wake": pass  # wake word disattivato
                 self._json(200,{"status":"ok"})
+
+            elif self.path=="/api/wake/toggle":
+                self._json(200,{"wake": False, "message": "Wake word disattivato"})
 
             elif self.path=="/api/memory/remember":
                 content = body.get("content","")
@@ -1013,11 +1113,39 @@ class H(BaseHTTPRequestHandler):
                 results = rag.search(query, limit)
                 self._json(200,{"results":results})
 
+            elif self.path=="/api/rag/semantic_search":
+                query = body.get("query","")
+                limit = body.get("limit",5)
+                if not query: self._json(400,{"error":"Query mancante"}); return
+                results = rag.semantic_search(query, limit)
+                self._json(200,{"results":results})
+
             elif self.path=="/api/rag/delete":
                 doc_id = body.get("doc_id",0)
                 if not doc_id: self._json(400,{"error":"Doc ID mancante"}); return
                 result = rag.delete_document(doc_id)
                 self._json(200,{"result":result})
+
+            elif self.path=="/api/rag/delete_all":
+                result = rag.delete_all()
+                self._json(200,{"result":result})
+
+            elif self.path=="/api/rag/add_folder":
+                folder = body.get("folder_path","")
+                recursive = body.get("recursive", True)
+                if not folder: self._json(400,{"error":"folder_path mancante"}); return
+                result = rag.add_folder(folder, recursive)
+                self._json(200,{"result":result})
+
+            elif self.path=="/api/rag/ingest":
+                """Indicizza la cartella data/documents/ e data/"""
+                from jarvis_rag import DOCS_DIR
+                results = []
+                for folder in [str(DOCS_DIR), str(Path(__file__).parent / "data")]:
+                    if Path(folder).exists():
+                        r = rag.add_folder(folder, recursive=True)
+                        results.append({"folder": folder, **r})
+                self._json(200,{"results": results})
 
             elif self.path=="/api/approval/approve":
                 request_id = body.get("request_id","")
@@ -1036,6 +1164,25 @@ class H(BaseHTTPRequestHandler):
                 with state_lock:
                     agent.reset()
                 self._json(200,{"status":"ok"})
+
+            elif self.path == "/api/trends/search":
+                query = body.get("query", "")
+                region = body.get("region", "wt")
+                max_r = body.get("max_results", 15)
+                if query:
+                    result = trends_search(query, region, max_r)
+                else:
+                    result = trending_now(region)
+                self._json(200, result)
+
+            elif self.path == "/api/telegram/send":
+                message = body.get("message", "")
+                chat_id = body.get("chat_id", 0)
+                if not message:
+                    self._json(400, {"error": "Messaggio vuoto"})
+                    return
+                result = telegram_send(chat_id if chat_id else None, message)
+                self._json(200, {"result": result})
 
             elif self.path=="/api/export":
                 fmt = body.get("format","json")
@@ -1081,6 +1228,7 @@ if __name__=="__main__":
     print(f"  Approval → Flow per azioni sensibili")
     print(f"  SSE  →  Streaming + TTS chunks abilitati")
     print(f"  SQLite → WAL mode + busy_timeout")
+    print(f"  Wake →  disattivato")
     print(f"  HUD  →  Cyberpunk v9.0")
     print("─"*52)
     if cfg["groq"]["api_key"]=="YOUR_GROQ_API_KEY_HERE":
@@ -1101,8 +1249,24 @@ if __name__=="__main__":
             print(f"  Wav2Lip → avatar non trovato, skip preload")
     except Exception as e:
         print(f"  Wav2Lip → preload skipped: {e}")
+
+    # ── Telegram Bot (opzionale) ──
+    if cfg.get("telegram", {}).get("enabled", False) and cfg.get("telegram", {}).get("bot_token", ""):
+        try:
+            telegram_start()
+            print(f"  Telegram → bot attivo")
+        except Exception as e:
+            print(f"  Telegram → errore avvio: {e}")
+    else:
+        print(f"  Telegram → disattivato (configura telegram.bot_token in config.json)")
+
+    # ── Wake Word disattivato ──
+    print(f"  Wake → disattivato")
+
     try:
-        server = ThreadedHTTPServer(("127.0.0.1",PORT), H)
+        HOST = os.environ.get("JARVIS_HOST", "127.0.0.1")
+        server = ThreadedHTTPServer((HOST,PORT), H)
+        print(f"  Host  →  {HOST}")
         server.allow_reuse_address = True
         server.daemon_threads = True
         print(f"  Server avviato su {PORT} (multi-thread, stabile)")
@@ -1118,4 +1282,9 @@ if __name__=="__main__":
         _tts_event.set()
         if _tts_worker_thread:
             _tts_worker_thread.join(timeout=3)
+        if _wake:
+            _wake.stop()
+            print("  Wake word fermato.")
+        else:
+            print("  Wake word già fermo.")
         print("\n  Server fermato.\n")

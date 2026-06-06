@@ -150,3 +150,173 @@ class JarvisMemory:
 
     def close(self):
         self.db.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# KNOWLEDGE GRAPH — grafo di entità e relazioni tra memorie
+# ═══════════════════════════════════════════════════════════════
+
+class KnowledgeGraph:
+    """Memoria a grafo: estrae entità dalle conversazioni e le collega tra loro."""
+
+    TOPIC_KEYWORDS = {
+        "code": ["codice", "programma", "python", "script", "function", "bug", "debug",
+                 "repo", "git", "commit", "branch", "api", "server", "database", "sql",
+                 "algoritmo", "classe", "metodo", "variabile", "refactor", "test"],
+        "business": ["riunione", "meeting", "progetto", "scadenza", "cliente", "fattura",
+                     "budget", "obiettivo", "kpi", "report", "strategia", "business",
+                     "lavoro", "ufficio", "team", "manager", "presentazione"],
+        "wellbeing": ["benessere", "salute", "relax", "pausa", "meditazione", "yoga",
+                      "palestra", "corsa", "dieta", "sonno", "stress", "ansia",
+                      "tranquillo", "calma", "respiro", "energia", "umore"],
+        "casual": ["ciao", "come stai", "che fai", "raga", "amico", "bella",
+                   "tutto bene", "che si dice", "novità", "weekend", "serata"],
+    }
+
+    def __init__(self, db_conn):
+        self.db = db_conn
+        self._init_tables()
+
+    def _init_tables(self):
+        c = self.db.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS graph_entities(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            entity_type TEXT DEFAULT 'concept',
+            first_seen TEXT DEFAULT (datetime('now')),
+            last_seen TEXT DEFAULT (datetime('now')),
+            importance INTEGER DEFAULT 1
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS graph_relations(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id INTEGER NOT NULL,
+            target_id INTEGER NOT NULL,
+            relation TEXT NOT NULL,
+            weight REAL DEFAULT 1.0,
+            last_seen TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY(source_id) REFERENCES graph_entities(id),
+            FOREIGN KEY(target_id) REFERENCES graph_entities(id),
+            UNIQUE(source_id, target_id, relation)
+        )""")
+        self.db.commit()
+
+    def _ensure_entity(self, name, entity_type="concept"):
+        c = self.db.cursor()
+        try:
+            c.execute("INSERT INTO graph_entities (name, entity_type) VALUES (?, ?)",
+                      (name.strip().lower(), entity_type))
+        except sqlite3.IntegrityError:
+            c.execute("UPDATE graph_entities SET last_seen=datetime('now'), "
+                      "importance = MIN(importance + 1, 10) WHERE name=?",
+                      (name.strip().lower(),))
+        self.db.commit()
+        c.execute("SELECT id FROM graph_entities WHERE name=?", (name.strip().lower(),))
+        return c.fetchone()["id"]
+
+    def add_triple(self, subject, relation, obj, subject_type="concept", obj_type="concept"):
+        """Aggiunge una tripla (soggetto → relazione → oggetto) al grafo."""
+        sid = self._ensure_entity(subject, subject_type)
+        oid = self._ensure_entity(obj, obj_type)
+        c = self.db.cursor()
+        try:
+            c.execute("""INSERT INTO graph_relations (source_id, target_id, relation, weight)
+                         VALUES (?, ?, ?, 1.0)""", (sid, oid, relation.lower()))
+        except sqlite3.IntegrityError:
+            c.execute("""UPDATE graph_relations SET weight = MIN(weight + 0.5, 5.0),
+                         last_seen = datetime('now')
+                         WHERE source_id=? AND target_id=? AND relation=?""",
+                      (sid, oid, relation.lower()))
+        self.db.commit()
+
+    def extract_from_text(self, text):
+        """Estrae triplette semplici dal testo (senza LLM, basato su pattern)."""
+        import re
+        triples = []
+        text_lower = text.lower()
+
+        # Pattern: "NAME è/è un TYPE" → (NAME, is_a, TYPE)
+        for m in re.finditer(r'(\w+)\s+è\s+(?:un|una|uno)?\s*(\w+)', text_lower):
+            triples.append((m.group(1), "is_a", m.group(2)))
+
+        # Pattern: "NAME ha/ha TYPE" o "NAME preferisce TYPE"
+        for m in re.finditer(r'(\w+)\s+(?:ha|ama|odia|usa|preferisce|vuole|sa|conosce|lavora con|studia)\s+(\w+)', text_lower):
+            verb = m.group(0).split()[1]
+            triples.append((m.group(1), verb, m.group(2)))
+
+        # Pattern: "NAME di TYPE" / "NAME in TYPE"
+        for m in re.finditer(r'(\w+)\s+(?:di|del|della|dei)\s+(\w+)', text_lower):
+            triples.append((m.group(1), "di", m.group(2)))
+
+        # Estrai topic dal testo
+        topics = self._detect_topic(text)
+        for topic in topics:
+            triples.append(("conversazione", "topic", topic))
+
+        for s, r, o in triples:
+            if len(s) > 1 and len(o) > 1:
+                self.add_triple(s, r, o)
+        return triples
+
+    def _detect_topic(self, text):
+        topics = set()
+        low = text.lower()
+        for topic, keywords in self.TOPIC_KEYWORDS.items():
+            if any(k in low for k in keywords):
+                topics.add(topic)
+        return topics or {"general"}
+
+    def extract_from_conversation(self, user_msg, assistant_reply):
+        """Estrae e registra triplette da una coppia di messaggi."""
+        triples = []
+        triples.extend(self.extract_from_text(user_msg))
+        triples.extend(self.extract_from_text(assistant_reply))
+        return triples
+
+    def get_context_for_prompt(self, query="", max_relations=10):
+        """Restituisce un blocco di testo con le entità e relazioni rilevanti."""
+        c = self.db.cursor()
+        if query:
+            # Cerca entità correlate alla query
+            c.execute("""SELECT e.name, e.entity_type, e.importance
+                         FROM graph_entities e
+                         WHERE e.name LIKE ? OR e.name IN (
+                            SELECT DISTINCT e2.name FROM graph_entities e2
+                            JOIN graph_relations r ON r.source_id=e2.id OR r.target_id=e2.id
+                            WHERE e2.name LIKE ?
+                         )
+                         ORDER BY e.importance DESC LIMIT 15""",
+                      (f'%{query.lower()}%', f'%{query.lower()}%'))
+        else:
+            c.execute("""SELECT name, entity_type, importance FROM graph_entities
+                         ORDER BY importance DESC, last_seen DESC LIMIT 15""")
+
+        entities = [dict(r) for r in c.fetchall()]
+        if not entities:
+            return ""
+
+        entity_names = [e["name"] for e in entities]
+        placeholders = ",".join("?" for _ in entity_names)
+        c.execute(f"""SELECT e1.name AS src, r.relation, e2.name AS tgt, r.weight
+                      FROM graph_relations r
+                      JOIN graph_entities e1 ON r.source_id=e1.id
+                      JOIN graph_entities e2 ON r.target_id=e2.id
+                      WHERE e1.name IN ({placeholders}) OR e2.name IN ({placeholders})
+                      ORDER BY r.weight DESC LIMIT {max_relations}""",
+                  entity_names + entity_names)
+
+        relations = [dict(r) for r in c.fetchall()]
+        if not relations:
+            return ""
+
+        context = "GRAFO DI CONOSCENZA:\n"
+        for rel in relations:
+            context += f"- {rel['src']} → {rel['relation']} → {rel['tgt']} (peso: {rel['weight']})\n"
+        return context.strip()
+
+    def get_stats(self):
+        c = self.db.cursor()
+        c.execute("SELECT COUNT(*) as c FROM graph_entities")
+        entities = c.fetchone()["c"]
+        c.execute("SELECT COUNT(*) as c FROM graph_relations")
+        relations = c.fetchone()["c"]
+        return {"entities": entities, "relations": relations}

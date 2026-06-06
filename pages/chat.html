@@ -1,0 +1,72 @@
+    <div id="cyber-bg">
+      <div class="neon-line h" style="top:15%"></div>
+      <div class="neon-line h" style="top:75%"></div>
+      <div class="neon-line v" style="left:20%"></div>
+      <div class="neon-line v" style="left:80%"></div>
+
+      <div id="cyber-text">
+        <div class="main">J.A.R.V.I.S</div>
+        <div class="sub">// CYBERPUNK HUD v9.1 //</div>
+      </div>
+
+      <div id="cyber-reactor">
+        <div class="reactor-core"></div>
+        <div class="hex-ring"></div>
+        <div class="hex-ring"></div>
+        <div class="hex-ring"></div>
+        <div class="hex-ring"></div>
+        <div class="hex-ring"></div>
+        <div class="hex-ring"></div>
+        <div class="scan-line"></div>
+        <div class="scan-line"></div>
+        <div class="scan-line"></div>
+        <div class="orbit-dot cy" style="--a:0deg;--r:80px"></div>
+        <div class="orbit-dot pk" style="--a:36deg;--r:120px"></div>
+        <div class="orbit-dot pp" style="--a:72deg;--r:100px"></div>
+        <div class="orbit-dot lv" style="--a:108deg;--r:145px"></div>
+        <div class="orbit-dot cy" style="--a:144deg;--r:90px"></div>
+        <div class="orbit-dot pk" style="--a:180deg;--r:160px"></div>
+      </div>
+
+      <canvas id="holo-canvas"></canvas>
+
+      <div class="holo-panel"><div class="panel-label">SYS.MON</div></div>
+      <div class="holo-panel"><div class="panel-label">DATA.LINK</div></div>
+      <div class="holo-panel"><div class="panel-label">AI.CORE</div></div>
+      <div class="holo-panel"><div class="panel-label">NET.SCAN</div></div>
+
+      <div id="holo-status" class="idle">◆ SYSTEM STANDBY ◆</div>
+    </div>
+
+    <!-- Avatar widget flottante (sopra chat) -->
+    <div id="avatar-widget">
+      <canvas id="widget-canvas"></canvas>
+      <canvas id="avatar3d-canvas"></canvas>
+      <div id="avatar3d-loading">CARICANDO MODELLO 3D...</div>
+    </div>
+
+    <div id="mouth-debug" style="display:none"></div>
+    <button onclick="testMouth()" style="display:none">TEST BOCCA</button>
+
+    <!-- Chat -->
+    <div id="chat-overlay">
+      <div id="mob-handle" style="display:none" onclick="expandChat()"></div>
+      <div id="chat-header">
+        <h2>CONSOLE</h2>
+        <span id="msg-count">0 MSG</span>
+      </div>
+      <div id="msgs"></div>
+      <div id="thinkEl">
+        <div class="think-dots"><span></span><span></span><span></span></div>
+        <span class="think-text">PROCESSING</span>
+      </div>
+      <div id="input-area">
+        <div id="spkbar"></div>
+        <div id="irow">
+          <input id="minput" placeholder="Enter command..." autocomplete="off">
+          <button id="mem-btn" onclick="openMem()" title="Memoria">🧠</button>
+          <button id="micbtn" onclick="toggleMic()">🎤</button>
+          <button id="sendbtn" onclick="send()">SEND</button>
+        </div>
+      </div>
+    </div>

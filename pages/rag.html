@@ -1,0 +1,16 @@
+  <div id="rag-panel-header">
+    <h3>◈ RAG DATABASE</h3><span id="rag-count-label">0 docs</span>
+    <button id="rag-close" onclick="closeRag()">✕</button>
+  </div>
+  <div id="rag-stats" style="padding:8px;font-family:var(--fm);font-size:9px;color:var(--tx2);border-bottom:1px solid var(--n3)"></div>
+  <div id="rag-search-wrap">
+    <input id="rag-search" placeholder="CERCA NEI DOCUMENTI..." oninput="filterRag(this.value)">
+  </div>
+  <div id="rag-list"></div>
+  <div id="rag-add-wrap">
+    <input id="rag-add-file" placeholder="Percorso file o cartella...">
+    <button id="rag-add-btn" onclick="addRagFile()">+ AGGIUNGI FILE</button>
+    <button id="rag-folder-btn" onclick="addRagFolder()">+ CARTELLA</button>
+    <button id="rag-ingest-btn" onclick="ingestRag()">📂 INDICIZZA TUTTO</button>
+    <button id="rag-clear-btn" onclick="clearRag()" style="background:rgba(255,0,50,0.2);color:#ff3355;border-color:#ff3355">🗑 SVUOTA</button>
+  </div>

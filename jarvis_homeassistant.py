@@ -1,8 +1,9 @@
 """jarvis_homeassistant.py — Home Assistant REST API integration"""
 import os, json, requests
-from functools import lru_cache
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-HA_URL = os.environ.get("HA_URL", "http://mikweb.info:8123")
+HA_URL = os.environ.get("HA_URL", "https://mikweb.info")
 HA_TOKEN = os.environ.get("HA_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJlMGYzZjA2NGRlNTQ0YjI5YWUzZDJmNjg4MWU1YTAzYiIsImlhdCI6MTc4MDYzODIzMCwiZXhwIjoyMDk1OTk4MjMwfQ.pZxxgqKxYQd00qe4UJQ0VQ27VcKD4QWfPUXxJ8waCSs")
 
 def _headers():
@@ -13,7 +14,7 @@ def _headers():
 
 def _get(path):
     try:
-        r = requests.get(f"{HA_URL}{path}", headers=_headers(), timeout=10)
+        r = requests.get(f"{HA_URL}{path}", headers=_headers(), timeout=10, verify=False)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.ConnectionError:
@@ -23,7 +24,7 @@ def _get(path):
 
 def _post(path, data=None):
     try:
-        r = requests.post(f"{HA_URL}{path}", headers=_headers(), json=data or {}, timeout=10)
+        r = requests.post(f"{HA_URL}{path}", headers=_headers(), json=data or {}, timeout=10, verify=False)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.ConnectionError:
@@ -69,3 +70,6 @@ def ha_get_logbook(entity_id=None):
     if entity_id:
         path += f"?entity={entity_id}"
     return _get(path)
+
+def ha_dashboard_url():
+    return HA_URL

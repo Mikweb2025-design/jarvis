@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S — CYBERPUNK HUD v9.1</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="scanlines"></div>
+<div id="noise"></div>
+<div id="glitch-overlay"></div>
+<div id="holo-overlay"></div>
+<div id="tier-indicator"></div>
+
+<div id="mem-panel"></div>
+<div id="rag-panel"></div>
+<div id="trends-panel"></div>
+<div id="worldnews-panel"></div>
+
+<div id="particles"></div>
+
+<div id="boot">
+  <div class="boot-glitch">J.A.R.V.I.S</div>
+  <div class="boot-sub">SYSTEM v9.1 // CYBERPUNK HUD</div>
+  <div class="boot-bar"><div class="boot-fill" id="boot-fill"></div></div>
+  <div class="boot-cursor">_</div>
+</div>
+
+<div class="bg-grid"></div>
+<div class="bg-vignette"></div>
+
+<div id="topbar">
+  <span class="brand">J.A.R.V.I.S</span>
+  <span class="sep">//</span>
+  <span class="stat"><span class="dot online" id="status-dot"></span><span id="status-text">ONLINE</span></span>
+  <span class="stat">⚡<span id="top-model">llama-3.3-70b</span></span>
+  <span class="stat" id="wake-indicator" title="Wake word: 'Jarvis' — Dictation: Option key" style="cursor:pointer;opacity:0.5">🎤<span style="font-size:10px;margin-left:2px">OFF</span></span>
+  <nav id="top-nav">
+    <a class="nav-link active" href="#chat" data-page-link="chat">CONSOLE</a>
+    <a class="nav-link" href="#memory" data-page-link="memory">MEMORIA</a>
+    <a class="nav-link" href="#rag" data-page-link="rag">RAG</a>
+    <a class="nav-link" href="#trends" data-page-link="trends">TRENDS</a>
+    <a class="nav-link" href="#worldnews" data-page-link="worldnews">🌍 MONDO</a>
+  </nav>
+  <div class="right">
+    <span id="top-time"></span>
+    <span>|</span>
+    <span id="latbar">LAT 0s</span>
+  </div>
+</div>
+
+<div id="mob-bar" style="display:none">
+  <span class="dot online" id="mob-status-dot"></span>
+  <span id="mob-model">llama-3.3-70b</span>
+  <span id="mob-time"></span>
+  <span id="mob-wake-indicator" style="font-size:12px;opacity:0.5">🎤</span>
+  <button id="mob-actions-btn" onclick="toggleMobDrawer()">⚡</button>
+</div>
+
+<div id="hud">
+  <div id="left"></div>
+  <div id="center"></div>
+  <div id="right"></div>
+</div>
+
+<div id="webcam-widget" class="hidden">
+  <div id="webcam-header">
+    <span id="webcam-title">📡 WEBCAM</span>
+    <button id="webcam-close" onclick="closeWebcam()">✕</button>
+  </div>
+  <div id="webcam-body">
+    <div id="webcam-iframe" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></div>
+  </div>
+  <div id="webcam-footer">
+    <span id="webcam-city">--</span>
+    <span id="webcam-status">● LIVE</span>
+  </div>
+</div>
+
+<div id="webcam-grid-widget" class="hidden">
+  <div id="webcam-grid-header">
+    <span>🛰 SATELLITE MONDO — <span id="wc-grid-cities">MILANO · VENEZIA · TOKYO · BERLINO · NEW YORK · SYDNEY</span></span>
+    <button id="webcam-grid-close" onclick="closeWebcamGrid()">✕</button>
+  </div>
+  <div id="webcam-grid-body"></div>
+</div>
+
+<div id="ha-widget" class="hidden">
+  <div id="ha-widget-header">
+    <span>🏠 HOME ASSISTANT — <span id="ha-widget-url">MIKWEB.INFO</span></span>
+    <button id="ha-widget-close" onclick="closeHAWidget()">✕</button>
+  </div>
+  <div id="ha-widget-body">
+    <iframe id="ha-widget-iframe" src="" allow="autoplay; encrypted-media"></iframe>
+  </div>
+</div>
+
+<div id="bottombar">
+  <span>JARVIS v9.2 // CYBERPUNK // 97 TOOLS // RAG v2 // F13 HYBRID SEARCH // QWEN3-TTS</span>
+  <span>MAC MINI M2 PRO</span>
+</div>
+
+<div id="mob-backdrop" onclick="closeMobDrawer()"></div>
+<div id="mob-drawer">
+  <div id="mob-drawer-header">
+    <span>✦ QUICK ACTIONS</span>
+    <button id="mob-drawer-close" onclick="closeMobDrawer()">✕</button>
+  </div>
+  <div id="mob-drawer-body">
+    <div class="mob-drw-section">QUICK TASKS</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();qa('web_search_ddg',{query:'news today'})"><span class="ico">⌘</span> Web Search</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();qa('computer_use_action',{action:'list_windows'})"><span class="ico">⌘</span> Windows</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();qa('git_status',{})"><span class="ico">⌘</span> Git Status</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();qa('notes_list',{})"><span class="ico">⌘</span> Notes</div>
+
+    <div class="mob-drw-section">COMMUNICATION</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();qa('open_app',{app_name:'Safari'})"><span class="ico">▶</span> Safari</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();qa('open_app',{app_name:'Spotify'})"><span class="ico">▶</span> Spotify</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();qa('take_screenshot',{mode:'full'})"><span class="ico">▶</span> Screenshot</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();speakAction('get_system_info',{info_type:'all'})"><span class="ico">▶</span> System Info</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();mailAction()"><span class="ico">▶</span> Read Mail</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();speakAction('calendar_today',{})"><span class="ico">▶</span> Calendar</div>
+
+    <div class="mob-drw-section">VOICE / THEME</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();document.querySelector('.voice-btn[data-voice=&quot;vivian&quot;]')?.click()"><span class="ico">🎤</span> Voice: Vivian</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();document.querySelector('.voice-btn[data-voice=&quot;serena&quot;]')?.click()"><span class="ico">🎤</span> Voice: Serena</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();document.querySelector('.theme-btn[data-theme=&quot;cyberpunk&quot;]')?.click()"><span class="ico">🎨</span> Theme: Cyber</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();document.querySelector('.theme-btn[data-theme=&quot;holo&quot;]')?.click()"><span class="ico">🎨</span> Theme: Holo</div>
+
+    <div class="mob-drw-section">SYSTEM</div>
+    <div class="mob-drw-btn" onclick="closeMobDrawer();resetChat()"><span class="ico">⟳</span> Reset Chat</div>
+  </div>
+</div>
+
+<script>
+// ── LOAD PAGE FRAGMENTS (synchronous to ensure DOM is ready before app.js) ──
+(function(){
+  function load(url) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, false);
+    xhr.send();
+    return xhr.responseText;
+  }
+  var chatHtml = load('pages/chat.html');
+  var dashHtml = load('pages/dashboard.html');
+  var memHtml = load('pages/memory.html');
+  var ragHtml = load('pages/rag.html');
+  var trendsHtml = load('pages/trends.html');
+  var worldnewsHtml = load('pages/worldnews.html');
+
+  document.getElementById('center').innerHTML = chatHtml;
+
+  var splitIdx = dashHtml.indexOf('<!--RIGHT-->');
+  document.getElementById('left').innerHTML = dashHtml.substring(0, splitIdx);
+  document.getElementById('right').innerHTML = dashHtml.substring(splitIdx + '<!--RIGHT-->'.length);
+
+  document.getElementById('mem-panel').innerHTML = memHtml;
+  document.getElementById('rag-panel').innerHTML = ragHtml;
+  document.getElementById('trends-panel').innerHTML = trendsHtml;
+  document.getElementById('worldnews-panel').innerHTML = worldnewsHtml;
+})();
+
+// ── HASH ROUTING ──
+function handleRoute(){
+  var hash = window.location.hash.slice(1) || 'chat';
+  document.documentElement.setAttribute('data-page', hash);
+  document.querySelectorAll('#top-nav .nav-link').forEach(function(a){
+    a.classList.toggle('active', a.dataset.pageLink === hash);
+  });
+  // Close fullscreen overlays when switching pages
+  if(hash !== 'worldnews' && typeof closeWorldNews==='function') closeWorldNews();
+  if(hash !== 'chat'){
+    if(typeof closeRag==='function') closeRag();
+    if(typeof closeMem==='function') closeMem();
+    if(typeof closeTrends==='function') closeTrends();
+  }
+  if(hash === 'memory'){
+    setTimeout(function(){ if(typeof openMem==='function') openMem(); }, 400);
+  } else if(hash === 'rag'){
+    setTimeout(function(){ if(typeof openRag==='function') openRag(); }, 400);
+  } else if(hash === 'trends'){
+    setTimeout(function(){ if(typeof openTrends==='function') openTrends(); }, 400);
+  } else if(hash === 'worldnews'){
+    setTimeout(function(){ if(typeof openWorldNews==='function') openWorldNews(); }, 400);
+  }
+}
+window.addEventListener('hashchange', handleRoute);
+if(!window.location.hash) history.replaceState(null, '', '#chat');
+setTimeout(handleRoute, 500);
+</script>
+
+<script src="assets/app.js"></script>
+<script type="module" src="assets/worldnews.js"></script>
+<script type="module" src="assets/avatar3d.js"></script>
+</body>
+</html>

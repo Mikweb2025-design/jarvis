@@ -1,0 +1,18 @@
+<div id="worldnews-toolbar" style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:#111122;border-bottom:1px solid #2a2a3e;flex-shrink:0">
+  <span style="color:#00f0ff;font-weight:700;font-size:15px;letter-spacing:3px;text-transform:uppercase">🌍 World Monitor</span>
+  <span style="color:#555;font-size:12px" id="wn-count">0 news</span>
+  <span style="flex:1"></span>
+  <button onclick="wnRefresh()" style="background:#1a1a2e;border:1px solid #2a2a3e;color:#00f0ff;padding:4px 14px;border-radius:4px;cursor:pointer;font:12px monospace">⟳ Refresh</button>
+  <label style="color:#777;font-size:11px">
+    <input type="checkbox" id="wn-3d-toggle" checked onchange="wnToggle3D()"> 3D
+  </label>
+</div>
+<div id="wn-layout" style="display:flex;flex:1;overflow:hidden">
+  <div id="wn-map" style="flex:1;position:relative;background:#0d0d1a"></div>
+  <div id="wn-sidebar" style="width:340px;overflow-y:auto;border-left:1px solid #2a2a3e;background:#0e0e18;flex-shrink:0">
+    <div id="wn-news-list" style="padding:8px"></div>
+  </div>
+</div>
+<div id="wn-detail" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:1000;align-items:center;justify-content:center" onclick="if(event.target===this)wnCloseDetail()">
+  <div id="wn-detail-card" style="background:#161625;border:1px solid #2a2a4e;border-radius:12px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 0 60px rgba(0,240,255,0.1)"></div>
+</div>

@@ -116,6 +116,7 @@ REGOLE:
 15. Network: network_connectivity per diagnostica internet, network_speedtest per velocità
 16. MCP: mcp_list per vedere server, mcp_enable per attivare (github, slack, filesystem), mcp_call per usare tool
 17. Home Assistant: ha_states per vedere lo stato di tutte le entità, ha_state per un'entità specifica, ha_service per controllare luci, switch, termostato, ecc. (domain=light, switch, climate, media_player...). Usa ha_config per info sulla versione HA. ha_dashboard per aprire la dashboard HA nel browser
+18. World News: world_news per notizie dal mondo geo-localizzate su mappa. Mostra news da BBC, NYT, ANSA, Tagesschau.
 """
 
 class JarvisAgent:

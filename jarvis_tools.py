@@ -43,6 +43,8 @@ from jarvis_homeassistant import (ha_get_config, ha_get_states, ha_get_state,
 from jarvis_trends import trends_search as _trends_search, trending_now as _trending_now
 # ── Telegram v9.3 ──
 from jarvis_telegram import send as _telegram_send, status as _telegram_status
+# ── World News v10.0 ──
+from jarvis_worldnews import fetch_world_news as _fetch_world_news
 # ── Blender MCP (opzionale — non blocca se Blender è chiuso) ──
 try:
     from jarvis_blender import (
@@ -236,6 +238,8 @@ TOOLS_SCHEMA = [
     {"type":"function","function":{"name":"trending_now","description":"Trend del momento — scorciatoia rapida per cosa sta trendendo ora","parameters":{"type":"object","properties":{"region":{"type":"string","default":"it"}}}}},
     # ── Telegram v9.3 ──
     {"type":"function","function":{"name":"telegram_send","description":"Invia un messaggio Telegram. chat_id opzionale (default: usa config.json)","parameters":{"type":"object","properties":{"message":{"type":"string"},"chat_id":{"type":"integer","default":0}},"required":["message"]}}},
+    # ── World News v10.0 ──
+    {"type":"function","function":{"name":"world_news","description":"Notizie dal mondo geo-localizzate su mappa interattiva. Mostra news da BBC, NYT, ANSA, Tagesschau con posizione geografica.","parameters":{"type":"object","properties":{"max_items":{"type":"integer","default":30}},"required":[]}}},
 ]
 
 def _run(cmd):
@@ -673,6 +677,11 @@ def approval_approve_tool(request_id="", auto_future=False, **_):
     return approval.approve(request_id, auto_future)
 def approval_deny_tool(request_id="", **_): return approval.deny(request_id)
 
+# ── WORLD NEWS v10.0 ──
+def world_news_tool(max_items=30, **_):
+    data = _fetch_world_news(max_items)
+    return json.dumps(data, ensure_ascii=False)
+
 # ── TRENDS v9.3 ──
 def trends_search_tool(category="technology", region="wt", max_results=10, **_):
     result = _trends_search(category, region, max_results)
@@ -777,6 +786,8 @@ HANDLERS = {
     "trending_now":trending_now_tool,
     # Telegram v9.3
     "telegram_send":telegram_send_tool,
+    # World News v10.0
+    "world_news":world_news_tool,
 }
 
 # ── Blender tools (aggiunti a runtime se modulo disponibile) ──────────────

@@ -168,8 +168,10 @@ def get_screen_resolution():
     # Fallback
     rc, out = _run("system_profiler SPDisplaysDataType | grep 'Resolution' | head -1")
     if out:
-        parts = out.split(":")[-1].strip().split(" x ")
-        return {"width": int(parts[0]), "height": int(parts[1])}
+        import re
+        nums = re.findall(r'\d+', out.split(":")[-1])
+        if len(nums) >= 2:
+            return {"width": int(nums[0]), "height": int(nums[1])}
     return {"width": 1920, "height": 1080}
 
 def screenshot_and_analyze(save_path=None):
@@ -200,6 +202,7 @@ def computer_use_action(action, **kwargs):
         "keyboard_shortcut": lambda: keyboard_shortcut(kwargs.get("keys", "cmd+c")),
         "get_mouse_pos": lambda: get_mouse_position(),
         "get_resolution": lambda: get_screen_resolution(),
+        "list_windows": lambda: _osa('tell application "System Events" to set winList to name of every process whose background only is false\nset output to ""\nrepeat with proc in winList\n\ttell application "System Events" to tell process proc to set wins to (title of every window)\n\trepeat with w in wins\n\t\tset output to output & proc & ": " & w & linefeed\n\tend repeat\nend repeat\nreturn output'),
         "screenshot_analyze": lambda: screenshot_and_analyze(),
     }
     

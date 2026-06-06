@@ -1,0 +1,35 @@
+  <div id="trends-panel-header">
+    <h3>◈ TREND MONITOR</h3>
+    <span id="trends-count-label">0 results</span>
+    <button id="trends-close" onclick="closeTrends()">✕</button>
+  </div>
+  <div id="trends-controls" style="padding:8px;border-bottom:1px solid var(--n3)">
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">
+      <button class="trends-cat active" data-cat="technology" onclick="trendsSetCat(this)">💻 TECH</button>
+      <button class="trends-cat" data-cat="ai" onclick="trendsSetCat(this)">🤖 AI</button>
+      <button class="trends-cat" data-cat="social" onclick="trendsSetCat(this)">📱 SOCIAL</button>
+      <button class="trends-cat" data-cat="startup" onclick="trendsSetCat(this)">🚀 STARTUP</button>
+      <button class="trends-cat" data-cat="opensource" onclick="trendsSetCat(this)">🔓 OPEN SOURCE</button>
+      <button class="trends-cat" data-cat="german" onclick="trendsSetCat(this)">🇩🇪 GERMAN</button>
+      <button class="trends-cat" data-cat="italian" onclick="trendsSetCat(this)">🇮🇹 ITALIAN</button>
+    </div>
+    <div style="display:flex;gap:4px;align-items:center">
+      <select id="trends-region" style="flex:0 0 auto;padding:4px 6px;background:var(--n2);color:var(--tx);border:1px solid var(--n3);font-family:var(--fm);font-size:9px">
+        <option value="it">🇮🇹 Italia</option>
+        <option value="de">🇩🇪 Germania</option>
+        <option value="us">🇺🇸 USA</option>
+        <option value="gb">🇬🇧 UK</option>
+        <option value="wt">🌍 Worldwide</option>
+      </select>
+      <input id="trends-search-input" placeholder="Cerca tendenze..." style="flex:1">
+      <button id="trends-search-btn" onclick="trendsSearch()">🔍 CERCA</button>
+      <button id="trends-refresh-btn" onclick="trendsRefresh()">⟳</button>
+    </div>
+    <div id="trends-status" style="font-size:8px;color:var(--tx3);margin-top:4px"></div>
+  </div>
+  <div id="trends-list" style="overflow-y:auto;flex:1;padding:4px">
+    <div style="padding:40px;text-align:center;color:var(--tx3);font-family:var(--fm);font-size:10px">
+      🔍 CERCA TENDENZE<br>
+      <span style="font-size:8px">seleziona una categoria o usa la barra di ricerca</span>
+    </div>
+  </div>

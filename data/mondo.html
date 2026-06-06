@@ -1,0 +1,40 @@
+<!DOCTYPE html><html><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>J.A.R.V.I.S — Satellite Mondo</title>
+<style>
+*{margin:0;padding:0}body{background:#0a0a0f;font-family:system-ui,sans-serif;padding:20px}
+h1{color:#00f0ff;font:bold 20px monospace;text-align:center;margin:0 0 20px;text-transform:uppercase;letter-spacing:4px}
+h1 small{color:#666;font-size:12px;letter-spacing:1px;display:block;margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:16px;max-width:1400px;margin:0 auto}
+.cam{background:#111122;border:1px solid #2a2a3e;border-radius:8px;overflow:hidden;
+filter:grayscale(1);transition:filter .3s}
+.cam:hover{filter:grayscale(.3);border-color:#00f0ff;box-shadow:0 0 20px rgba(0,240,255,.15)}
+.cam-header{background:#1a1a2e;color:#00f0ff;font:bold 13px monospace;padding:8px 14px;letter-spacing:2px}
+.cam-wrap{position:relative;width:100%;padding-top:56.25%;background:#000}
+.cam-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%}
+.no-vid{display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:0}
+.coords{color:#555;font:12px monospace;padding:4px 0}
+</style></head><body>
+<h1>🛰 SATELLITE MONDO <small>MILANO · VENEZIA · TOKYO · PECHINO · NEW YORK</small></h1>
+<div class="grid">
+            <div class="cam">
+                <div class="cam-header">Milano</div>
+                <div class="cam-wrap"><iframe src="https://www.youtube.com/embed/dsoM6TYIkOI?autoplay=1&mute=1&loop=1" frameborder="0" allow="autoplay;encrypted-media" allowfullscreen></iframe></div>
+            </div>
+            <div class="cam">
+                <div class="cam-header">Venezia</div>
+                <div class="cam-wrap"><iframe src="https://www.youtube.com/embed/a1mcaV3Sf9U?autoplay=1&mute=1&loop=1" frameborder="0" allow="autoplay;encrypted-media" allowfullscreen></iframe></div>
+            </div>
+            <div class="cam">
+                <div class="cam-header">Tokyo</div>
+                <div class="cam-wrap"><iframe src="https://www.youtube.com/embed/gFRtAAmiFbE?autoplay=1&mute=1&loop=1" frameborder="0" allow="autoplay;encrypted-media" allowfullscreen></iframe></div>
+            </div>
+            <div class="cam">
+                <div class="cam-header">Pechino</div>
+                <div class="cam-wrap"><iframe src="https://www.youtube.com/embed/6nmvrEX6Djc?autoplay=1&mute=1&loop=1" frameborder="0" allow="autoplay;encrypted-media" allowfullscreen></iframe></div>
+            </div>
+            <div class="cam">
+                <div class="cam-header">New York</div>
+                <div class="cam-wrap"><iframe src="https://www.youtube.com/embed/VGnFLdQW39A?autoplay=1&mute=1&loop=1" frameborder="0" allow="autoplay;encrypted-media" allowfullscreen></iframe></div>
+            </div></div>
+</body></html>

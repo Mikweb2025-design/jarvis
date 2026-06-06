@@ -1,0 +1,118 @@
+<!--LEFT-->
+    <div id="time-section">
+      <div class="time-main" id="time-display">00:00<span class="sec">00</span></div>
+      <div class="date-row"><span id="day-name">MONDAY</span><span class="day-num" id="day-num">01</span><span id="month-name">JAN</span><span id="year-num">2026</span></div>
+    </div>
+
+    <div id="storage-section">
+      <div class="storage-row"><span>PRIMARY STORAGE</span><span id="disk-total">--</span></div>
+      <div class="storage-bar"><div class="fill" id="disk-fill" style="width:0%"></div></div>
+      <div class="storage-info"><span id="disk-used">--</span><span>used</span></div>
+    </div>
+
+    <div id="power-section">
+      <div class="power-ring">
+        <svg viewBox="0 0 44 44">
+          <circle class="ring-bg" cx="22" cy="22" r="18"/>
+          <circle class="ring-fg" cx="22" cy="22" r="18" stroke-dasharray="113.1" stroke-dashoffset="113.1" id="power-ring"/>
+        </svg>
+        <div class="pct" id="power-pct">--%</div>
+      </div>
+      <div class="power-info">
+        <div>POWER</div>
+        <div class="status" id="power-status">SCANNING</div>
+      </div>
+    </div>
+
+    <div class="waste-line"><span id="waste-info">-- processes</span></div>
+    <div class="uptime-line" id="uptime">UPTIME: --</div>
+
+    <div class="qa-section">
+      <div class="section-label">QUICK TASKS</div>
+      <div class="qa-btn" onclick="qa('web_search_ddg',{query:'news today'})"><span class="ico">⌘</span> Web Search</div>
+      <div class="qa-btn" onclick="qa('computer_use_action',{action:'list_windows'})"><span class="ico">⌘</span> Active Windows</div>
+      <div class="qa-btn" onclick="qa('git_status',{})"><span class="ico">⌘</span> Git Status</div>
+      <div class="qa-btn" onclick="toggleRag()"><span class="ico">📚</span> RAG Docs</div>
+      <div class="qa-btn" onclick="qa('notes_list',{})"><span class="ico">⌘</span> Notes</div>
+    </div>
+
+    <div class="qa-section">
+      <div class="section-label">COMMUNICATION</div>
+      <div class="qa-btn" onclick="qa('open_app',{app_name:'Safari'})"><span class="ico">▶</span> Safari</div>
+      <div class="qa-btn" onclick="qa('open_app',{app_name:'Spotify'})"><span class="ico">▶</span> Spotify</div>
+      <div class="qa-btn" onclick="qa('open_app',{app_name:'Music'})"><span class="ico">▶</span> Music</div>
+      <div class="qa-btn" onclick="qa('take_screenshot',{mode:'full'})"><span class="ico">▶</span> Screenshot</div>
+      <div class="qa-btn" onclick="qa('screen_ocr',{})"><span class="ico">▶</span> OCR Screen</div>
+      <div class="qa-btn" onclick="speakAction('get_system_info',{info_type:'all'})"><span class="ico">▶</span> System Info</div>
+      <div class="qa-btn" onclick="speakAction('calendar_today',{})"><span class="ico">▶</span> Calendar Day</div>
+      <div class="qa-btn" onclick="mailAction()"><span class="ico">▶</span> Read Mail</div>
+      <div class="qa-btn" onclick="qa('screen_summary',{})"><span class="ico">▶</span> Screen Summary</div>
+    </div>
+
+    <div class="voice-section">
+      <div class="section-label">VOICE</div>
+      <div class="voice-grid" id="voice-grid">
+        <div class="voice-btn active" data-voice="vivian" onclick="selectVoice(this)"><span class="vn">VIVIAN</span></div>
+        <div class="voice-btn" data-voice="serena" onclick="selectVoice(this)"><span class="vn">SERENA</span></div>
+        <div class="voice-btn" data-voice="aiden" onclick="selectVoice(this)"><span class="vn">AIDEN</span></div>
+        <div class="voice-btn" data-voice="ryan" onclick="selectVoice(this)"><span class="vn">RYAN</span></div>
+        <div class="voice-btn" data-voice="eric" onclick="selectVoice(this)"><span class="vn">ERIC</span></div>
+        <div class="voice-btn" data-voice="dylan" onclick="selectVoice(this)"><span class="vn">DYLAN</span></div>
+      </div>
+    </div>
+
+    <div class="theme-section">
+      <div class="section-label">HOLO TEMPLATE</div>
+      <div class="theme-grid" id="theme-grid">
+        <div class="theme-btn active" data-theme="cyberpunk" onclick="selectTheme(this)"><span class="tn">⚡CYBER</span></div>
+        <div class="theme-btn" data-theme="holo" onclick="selectTheme(this)"><span class="tn">🌀HOLO</span></div>
+        <div class="theme-btn" data-theme="sunset" onclick="selectTheme(this)"><span class="tn">🌅SUNSET</span></div>
+        <div class="theme-btn" data-theme="matrix" onclick="selectTheme(this)"><span class="tn">💚MATRIX</span></div>
+        <div class="theme-btn" data-theme="crystal" onclick="selectTheme(this)"><span class="tn">💎CRYSTAL</span></div>
+      </div>
+    </div>
+
+    <div style="margin-top:auto">
+      <div class="qa-btn" onclick="resetChat()" style="justify-content:center"><span class="ico">⟳</span> RESET</div>
+    </div>
+<!--RIGHT-->
+    <div id="weather-section">
+      <div class="weather-row">
+        <div class="weather-temp" id="w-temp">--<span class="unit">°</span></div>
+        <div><div class="weather-city">BERLIN, DE</div><div class="weather-desc" id="w-desc">Loading...</div></div>
+      </div>
+      <div class="weather-details">
+        <div class="weather-detail">Humidity: <span id="w-hum">--%</span></div>
+        <div class="weather-detail">Wind: <span id="w-wind">-- km/h</span></div>
+        <div class="weather-detail">Feels: <span id="w-feels">--°</span></div>
+        <div class="weather-detail">Pressure: <span id="w-press">-- hPa</span></div>
+      </div>
+    </div>
+
+    <div class="atmo-section">
+      <div class="section-label">ATMOSPHERE</div>
+      <div class="atmo-row"><span>Humidity</span><span id="atmo-hum">--%</span></div>
+      <div class="atmo-bar"><div class="fill" id="atmo-hum-bar" style="width:0%"></div></div>
+      <div class="atmo-row"><span>UV Index</span><span id="atmo-uv">--</span></div>
+      <div class="atmo-bar"><div class="fill" id="atmo-uv-bar" style="width:0%"></div></div>
+      <div class="atmo-row"><span>Visibility</span><span id="atmo-vis">-- km</span></div>
+      <div class="atmo-bar"><div class="fill" id="atmo-vis-bar" style="width:0%"></div></div>
+    </div>
+
+    <div class="clocks-section">
+      <div class="section-label">WORLD CLOCKS</div>
+      <div id="clocks-list"></div>
+    </div>
+
+    <div class="visuals-section">
+      <div class="section-label">STATUS</div>
+      <div class="visual-box">
+        <div class="tl"></div><div class="br"></div>
+        <div class="visual-label" id="visual-label">SCANNING</div>
+      </div>
+    </div>
+
+    <div id="log-section">
+      <div class="section-label">SESSION LOG</div>
+      <div class="log-box" id="log-box"></div>
+    </div>
