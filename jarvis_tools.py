@@ -576,17 +576,35 @@ def ha_service_tool(domain="", service="", entity_id="", data=None, **_):
     if not domain or not service:
         return "⚠ Specifica domain e service"
     payload = dict(data or {})
+
+    # Se entity_id non specificato ma domain/servizio è generico (es. spegni tutte le luci)
+    if not entity_id and not payload.get("entity_id"):
+        if domain == "light" and service in ("turn_off", "turn_on"):
+            all_states = ha_get_states()
+            if isinstance(all_states, dict) and "error" in all_states:
+                return f"⚠ {all_states['error']}"
+            targets = [s["entity_id"] for s in all_states
+                       if s["entity_id"].startswith("light.") and s["state"] == ("on" if service == "turn_off" else "off")]
+            if not targets:
+                return "⚠ Nessuna luce da " + ("spegnere" if service == "turn_off" else "accendere")
+            done = 0
+            for eid in targets:
+                ha_call_service(domain, service, {"entity_id": eid})
+                done += 1
+            return f"✅ {done} luci " + ("spente" if service == "turn_off" else "accese")
+        return "⚠ Specifica entity_id (es. light.lampe1)"
+
     if entity_id and "entity_id" not in payload:
         payload["entity_id"] = entity_id
     if not payload.get("entity_id"):
         return "⚠ Specifica l'entità da controllare (entity_id)"
+
     result = ha_call_service(domain, service, payload)
     if isinstance(result, dict) and "error" in result:
         return f"⚠ {result['error']}"
-    if entity_id:
-        state = ha_get_state(entity_id)
-        if isinstance(state, dict) and "error" not in state:
-            return f"✅ {entity_id} → {state['state']}"
+    state = ha_get_state(payload["entity_id"])
+    if isinstance(state, dict) and "error" not in state:
+        return f"✅ {payload['entity_id']} → {state['state']}"
     return "✅ fatto"
 def ha_config_tool(**_):
     cfg = ha_get_config()
