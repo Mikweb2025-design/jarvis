@@ -1,18 +1,77 @@
-<div id="worldnews-toolbar" style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:#111122;border-bottom:1px solid #2a2a3e;flex-shrink:0">
-  <span style="color:#00f0ff;font-weight:700;font-size:15px;letter-spacing:3px;text-transform:uppercase">🌍 World Monitor</span>
-  <span style="color:#555;font-size:12px" id="wn-count">0 news</span>
+<div id="worldnews-toolbar" style="display:flex;align-items:center;gap:12px;padding:6px 16px;background:linear-gradient(135deg,#0d0d1a 0%,#12122a 100%);border-bottom:1px solid #1e1e30;flex-shrink:0;position:relative;z-index:10">
+  <span style="color:#00f0ff;font-weight:700;font-size:14px;letter-spacing:3px;text-transform:uppercase;text-shadow:0 0 20px rgba(0,240,255,0.3),0 0 40px rgba(0,240,255,0.1);display:flex;align-items:center;gap:6px">
+    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#00f0ff;box-shadow:0 0 8px #00f0ff;animation:wnPulse 1.2s infinite"></span>
+    World Monitor
+  </span>
+  <span style="color:#555;font-size:11px;font-family:monospace" id="wn-count">0 notizie</span>
+  <span id="wn-geo-badge" style="color:#4488ff;font-size:9px;background:linear-gradient(135deg,#0f0f22,#1a1a3e);padding:2px 10px;border-radius:10px;border:1px solid rgba(68,136,255,0.2);font-family:monospace;letter-spacing:1px">TOP 5</span>
   <span style="flex:1"></span>
-  <button onclick="wnRefresh()" style="background:#1a1a2e;border:1px solid #2a2a3e;color:#00f0ff;padding:4px 14px;border-radius:4px;cursor:pointer;font:12px monospace">⟳ Refresh</button>
-  <label style="color:#777;font-size:11px">
-    <input type="checkbox" id="wn-3d-toggle" checked onchange="wnToggle3D()"> 3D
-  </label>
-</div>
-<div id="wn-layout" style="display:flex;flex:1;overflow:hidden">
-  <div id="wn-map" style="flex:1;position:relative;background:#0d0d1a"></div>
-  <div id="wn-sidebar" style="width:340px;overflow-y:auto;border-left:1px solid #2a2a3e;background:#0e0e18;flex-shrink:0">
-    <div id="wn-news-list" style="padding:8px"></div>
+  <div style="display:flex;gap:6px;align-items:center">
+    <div style="display:flex;gap:4px;padding:2px;background:rgba(0,0,0,0.2);border-radius:4px;border:1px solid #1a1a2e">
+      <button id="wn-reel-btn" onclick="wnToggleReel()" style="background:linear-gradient(135deg,rgba(255,102,204,0.1),rgba(136,68,255,0.1));border:none;color:#ff66cc;padding:3px 9px;border-radius:3px;cursor:pointer;font:10px monospace;transition:all .2s;white-space:nowrap;font-weight:700">▶ REEL</button>
+      <button id="wn-sentiment-btn" onclick="wnToggleSentimentMode()" style="background:transparent;border:none;color:#666;padding:3px 8px;border-radius:3px;cursor:pointer;font:10px monospace;transition:all .2s;white-space:nowrap">◐ MOOD</button>
+      <button id="wn-stats-btn" onclick="wnToggleStats()" style="background:transparent;border:none;color:#666;padding:3px 8px;border-radius:3px;cursor:pointer;font:10px monospace;transition:all .2s;white-space:nowrap">📊 STATS</button>
+      <button id="wn-autopilot-btn" onclick="wnToggleAutoPilot()" style="background:transparent;border:none;color:#666;padding:3px 8px;border-radius:3px;cursor:pointer;font:10px monospace;transition:all .2s">✈ PILOTA</button>
+      <button id="wn-autonews-btn" onclick="wnToggleAutoNews()" style="background:transparent;border:none;color:#666;padding:3px 8px;border-radius:3px;cursor:pointer;font:10px monospace;transition:all .2s;white-space:nowrap">🤖 AUTO</button>
+    </div>
+    <button onclick="wnRefresh()" style="background:rgba(0,240,255,0.05);border:1px solid rgba(0,240,255,0.15);color:#4488ff;padding:3px 10px;border-radius:4px;cursor:pointer;font:10px monospace;transition:all .2s" onmouseenter="this.style.background='rgba(0,240,255,0.1)'" onmouseleave="this.style.background='rgba(0,240,255,0.05)'">⟳</button>
+    <button onclick="window.closeWorldNews && window.closeWorldNews()" style="background:rgba(255,68,68,0.08);border:1px solid rgba(255,68,68,0.2);color:#ff6666;padding:3px 10px;border-radius:4px;cursor:pointer;font:10px monospace;transition:all .2s;display:flex;align-items:center;gap:4px" onmouseenter="this.style.background='rgba(255,68,68,0.15)'" onmouseleave="this.style.background='rgba(255,68,68,0.08)'">← CHAT</button>
   </div>
 </div>
-<div id="wn-detail" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:1000;align-items:center;justify-content:center" onclick="if(event.target===this)wnCloseDetail()">
-  <div id="wn-detail-card" style="background:#161625;border:1px solid #2a2a4e;border-radius:12px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 0 60px rgba(0,240,255,0.1)"></div>
+<!-- CATEGORY FILTER CHIPS -->
+<div id="wn-cat-chips" style="display:flex;gap:6px;padding:6px 16px;background:#08081a;border-bottom:1px solid rgba(0,240,255,0.05);flex-wrap:wrap;align-items:center;flex-shrink:0"></div>
+<!-- TRENDING TICKER -->
+<div id="wn-trending-bar" style="display:flex;align-items:center;gap:0;background:linear-gradient(90deg,#0a0a18,#0d0d20);border-bottom:1px solid rgba(255,102,204,0.08);height:26px;overflow:hidden;flex-shrink:0;position:relative">
+  <span style="display:flex;align-items:center;gap:4px;padding:0 12px;height:100%;background:linear-gradient(135deg,#ff66cc22,#8844ff22);color:#ff66cc;font:9px monospace;font-weight:700;letter-spacing:2px;border-right:1px solid rgba(255,102,204,0.15);white-space:nowrap;z-index:2;flex-shrink:0">🔥 TRENDING</span>
+  <div id="wn-trending-track" style="display:flex;gap:28px;white-space:nowrap;padding-left:16px;will-change:transform"></div>
+</div>
+<div id="wn-suggest" style="display:flex;gap:4px;padding:4px 16px;background:#08081a;border-bottom:1px solid rgba(0,240,255,0.05);flex-wrap:wrap;min-height:24px;align-items:center"></div>
+<div id="wn-layout" style="display:flex;flex:1;overflow:hidden;position:relative">
+  <div id="wn-map" style="flex:1;position:relative;background:#06060d">
+    <div id="wn-breaking-bar" style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;padding:4px 20px;border-radius:20px;background:rgba(0,20,40,0.8);backdrop-filter:blur(8px);border:1px solid rgba(0,240,255,0.15);display:none;align-items:center;gap:10px;animation:wnSlideDown .4s ease-out;pointer-events:none">
+      <span style="display:flex;align-items:center;gap:4px;font-size:9px;color:#ff4444;font-weight:700;letter-spacing:2px;text-transform:uppercase">
+        <span style="width:4px;height:4px;border-radius:50%;background:#ff4444;animation:wnPulse 0.6s infinite"></span>
+        Breaking
+      </span>
+      <span id="wn-breaking-text" style="font-size:10px;color:#ddd;font-family:monospace;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    </div>
+  </div>
+  <div id="wn-sidebar" style="width:320px;overflow-y:auto;overflow-x:hidden;border-left:1px solid rgba(30,30,48,0.5);background:linear-gradient(180deg,#0a0a18 0%,#0d0d1a 40%,#0a0a18 100%);flex-shrink:0;position:relative">
+    <div id="wn-sidebar-glow" style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#00f0ff44,transparent);z-index:1"></div>
+    <div style="position:sticky;top:0;z-index:2;background:linear-gradient(180deg,#0d0d1a 0%,rgba(13,13,26,0.9) 80%,transparent);padding:10px 12px 6px;backdrop-filter:blur(4px)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+        <span style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;background:linear-gradient(90deg,#00f0ff,#8844ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">classifica</span>
+        <span style="flex:1;height:1px;background:linear-gradient(90deg,rgba(0,240,255,0.2),transparent)"></span>
+        <span style="font-size:8px;color:#555;border:1px solid #222;border-radius:4px;padding:1px 6px;letter-spacing:2px;font-family:monospace">IT</span>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:4px">
+        <input id="wn-search" oninput="wnRenderList(this.value)" placeholder="🔍 filtra..." style="flex:1;background:rgba(0,0,0,0.3);border:1px solid #1a1a2e;border-radius:4px;padding:3px 8px;color:#888;font:10px monospace;outline:none;transition:border-color .2s" onfocus="this.style.borderColor='#00f0ff33'" onblur="this.style.borderColor='#1a1a2e'">
+      </div>
+    </div>
+    <!-- STATS PANEL (toggle) -->
+    <div id="wn-stats-panel" style="display:none;padding:8px 12px 4px"></div>
+    <div id="wn-news-list" style="padding:4px 8px 20px"></div>
+  </div>
+</div>
+
+<!-- ── REEL MODE (TikTok-style vertical full-screen) ── -->
+<div id="wn-reel" style="display:none;position:fixed;inset:0;z-index:1100;background:#04060c">
+  <div id="wn-reel-scroll" style="position:absolute;inset:0;overflow-y:scroll;scroll-snap-type:y mandatory;scroll-behavior:smooth;-webkit-overflow-scrolling:touch"></div>
+  <!-- top bar -->
+  <div style="position:absolute;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:10px;padding:12px 16px;background:linear-gradient(180deg,rgba(4,6,12,0.9),transparent);pointer-events:none">
+    <span style="color:#ff66cc;font-weight:800;font-size:13px;letter-spacing:3px;text-shadow:0 0 16px rgba(255,102,204,0.5)">▶ NEWS REEL</span>
+    <span id="wn-reel-counter" style="color:#888;font:10px monospace"></span>
+    <span style="flex:1"></span>
+    <button onclick="wnToggleReel()" style="pointer-events:auto;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.3);color:#ff6666;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px">✕</button>
+  </div>
+  <!-- progress dots -->
+  <div id="wn-reel-dots" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:6px;pointer-events:none"></div>
+  <!-- auto-play indicator -->
+  <div id="wn-reel-autoplay" style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;display:flex;align-items:center;gap:8px;padding:6px 16px;background:rgba(0,0,0,0.5);backdrop-filter:blur(8px);border:1px solid rgba(255,102,204,0.2);border-radius:20px">
+    <button id="wn-reel-autoplay-btn" onclick="wnReelToggleAutoplay()" style="background:transparent;border:none;color:#ff66cc;cursor:pointer;font:10px monospace;font-weight:700;letter-spacing:1px">▶ AUTO-PLAY: OFF</button>
+  </div>
+</div>
+
+<div id="wn-detail" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)" onclick="if(event.target===this)wnCloseDetail()">
+  <div id="wn-detail-card" style="background:linear-gradient(135deg,#161625 0%,#1a1a2e 100%);border:1px solid rgba(42,42,78,0.5);border-radius:14px;max-width:540px;width:90%;max-height:80vh;overflow-y:auto;padding:28px;box-shadow:0 0 80px rgba(0,240,255,0.08),0 0 40px rgba(0,0,0,0.5);transform:translateY(0);transition:all .3s cubic-bezier(0.175,0.885,0.32,1.275)"></div>
 </div>

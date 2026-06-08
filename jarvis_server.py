@@ -21,6 +21,34 @@ from jarvis_approval import approval
 from jarvis_wake import JarvisWake
 from jarvis_trends import trends_search, trending_now
 from jarvis_telegram import start as telegram_start, send as telegram_send, status as telegram_status
+from jarvis_evolution import evol
+from jarvis_vision import vision
+from jarvis_voice import voice
+from jarvis_os_control import os_control
+from jarvis_security import security
+from jarvis_pantheon import pantheon
+from jarvis_plugins import plugins
+_HAVE_DEEP = False
+try:
+    from deep_translator import GoogleTranslator as _GTrans
+    _GTrans(source='en', target='it').translate('test')
+    _HAVE_DEEP = True
+except:
+    pass
+if not _HAVE_DEEP:
+    try:
+        import requests as _gtr
+        def _GTrans(source='en', target='it'):
+            class _GT:
+                def translate(self, txt):
+                    r = _gtr.post('https://translate.googleapis.com/translate_a/single', params={
+                        'client': 'gtx', 'sl': source, 'tl': target, 'dt': 't', 'q': txt[:2000]
+                    }, timeout=8)
+                    return r.json()[0][0][0] if r.ok else txt
+            return _GT()
+        _HAVE_DEEP = True
+    except:
+        pass
 
 # Abilita WAL mode per SQLite (concorrenza migliorata)
 memory.db.execute("PRAGMA journal_mode=WAL")
@@ -507,7 +535,7 @@ class H(BaseHTTPRequestHandler):
             elif self.path=="/api/status":
                 rag_st = rag.stats()
                 self._json(200,{"status":"online","model":cfg["groq"]["model"],
-                    "voice":cfg["tts"].get("qwen3_voice", cfg["tts"].get("voice", "vivian")),"version":"9.2",
+                    "voice":cfg["tts"].get("qwen3_voice", cfg["tts"].get("voice", "vivian")),"version":"11.0",
                     "rag":{"docs":rag_st["documents"],"chunks":rag_st["chunks"],"model":rag_st["model"]},
                     "time":datetime.now().isoformat()})
 
@@ -586,6 +614,15 @@ class H(BaseHTTPRequestHandler):
             elif self.path=="/api/rag/stats":
                 self._json(200, rag.stats())
 
+            elif self.path.startswith("/api/rag/document?"):
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                doc_id = int(qs.get("id", [0])[0])
+                if not doc_id:
+                    self._json(400, {"error": "Parametro 'id' mancante"})
+                else:
+                    self._json(200, rag.get_document(doc_id))
+
             elif self.path=="/api/approval/pending":
                 self._json(200, {"pending": approval.get_pending()})
 
@@ -620,9 +657,104 @@ class H(BaseHTTPRequestHandler):
                 from jarvis_worldnews import fetch_world_news
                 from urllib.parse import urlparse, parse_qs
                 qs = parse_qs(urlparse(self.path).query)
-                max_items = int(qs.get("max", [50])[0])
+                max_items = min(int(qs.get("max", [30])[0]), 60)
                 data = fetch_world_news(max_items)
                 self._json(200, data)
+
+            elif self.path == "/api/evolution/status":
+                try: self._json(200, {"status": evol.get_status_summary(), "daily": evol.generate_daily_report(), "patterns": evol.analyze_patterns()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif self.path == "/api/evolution/heal":
+                try: self._json(200, {"results": evol.run_healing_check()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif self.path == "/api/evolution/report/daily":
+                try: self._json(200, evol.generate_daily_report())
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif self.path == "/api/evolution/report/weekly":
+                try: self._json(200, evol.generate_weekly_report())
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/vision/analyze":
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                img = qs.get("image_path", [""])[0]
+                try: self._json(200, vision.analyze_screenshot(img if img else None))
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/vision/ocr":
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                img = qs.get("image_path", [""])[0]
+                try: self._json(200, {"text": vision.read_text(img if img else None)})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/voice/list":
+                try: self._json(200, {"voices": voice.list_voices()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/voice/status":
+                try: self._json(200, {"current_voice": voice.current_voice, "available": list(voice.PLAYAI_VOICES.keys())})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/os/windows":
+                try: self._json(200, {"windows": os_control.list_windows()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/os/apps":
+                try: self._json(200, {"apps": os_control.list_apps()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/os/system":
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                cat = qs.get("category", ["SPHardwareDataType"])[0]
+                try: self._json(200, {"info": os_control.system_profiler(cat)})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/security/status":
+                try: self._json(200, security.get_activity_report())
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/security/rules":
+                try: self._json(200, {"rules": security.list_rules()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/security/audit":
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                limit = int(qs.get("limit", [20])[0])
+                try: self._json(200, {"audit": security.db.get_audit_log(limit)})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/pantheon/agents":
+                try: self._json(200, {"agents": pantheon.db.list_agents()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/pantheon/tasks":
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                limit = int(qs.get("limit", [10])[0])
+                try: self._json(200, {"tasks": pantheon.db.get_pending_tasks(limit=limit)})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/pantheon/economy":
+                try: self._json(200, {"economy": pantheon.economy_report()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/plugins/list":
+                try: self._json(200, {"plugins": plugins.list_plugins()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/plugins/marketplace":
+                try: self._json(200, {"marketplace": plugins.marketplace_catalog()})
+                except Exception as e: self._json(500, {"error": str(e)})
+
+            elif _path_only == "/api/plugins/health":
+                try: self._json(200, {"health": plugins.plugins_health()})
+                except Exception as e: self._json(500, {"error": str(e)})
 
             else:
                 self._json(404,{"error":f"Non trovato: {self.path}"})
@@ -701,7 +833,7 @@ class H(BaseHTTPRequestHandler):
                     rag_context = ""
                     if len(msg.split()) >= 3:
                         try:
-                            rag_context = rag.query_context(msg, max_chunks=3)
+                            rag_context = rag.query_context(msg, max_chunks=5)
                         except Exception as e:
                             print(f"[RAG] stream error: {e}")
                     memory.log_conversation("user", msg)
@@ -902,6 +1034,42 @@ class H(BaseHTTPRequestHandler):
                 args = body.get("args",{})
                 if not name: self._json(400,{"error":"Nome tool mancante"}); return
                 self._json(200,{"result":execute_tool(name,args),"tool":name})
+
+            elif self.path=="/api/translate":
+                text = body.get("text","")
+                target = body.get("target","italian")
+                source = body.get("source","english")
+                if not text: self._json(400,{"error":"Testo vuoto"}); return
+                t0 = time.time()
+                translated = None
+                lang_map = {"italian":"it","english":"en","french":"fr","german":"de","spanish":"es"}
+                src_lang = lang_map.get(source,"en")
+                tgt_lang = lang_map.get(target,"it")
+                try:
+                    if _HAVE_DEEP:
+                        r = _GTrans(source=src_lang, target=tgt_lang).translate(text[:500])
+                        if r and r.strip() and r.strip() != text[:2000]:
+                            translated = r.strip()
+                except Exception as _te:
+                    print(f"[TRANS] deep error: {_te}")
+                if not translated:
+                    try:
+                        from jarvis_agent import GROQ_URL
+                        import requests as req_lib
+                        payload = {"model": cfg["groq"]["model"], "messages": [
+                            {"role":"system","content":f"Sei un traduttore professionista. Traduci il seguente testo da {source} a {target}. Restituisci SOLO la traduzione, nient'altro."},
+                            {"role":"user","content": text[:2000]}
+                        ], "temperature": 0.1, "max_tokens": 2048}
+                        headers = {"Authorization": f"Bearer {cfg['groq']['api_key']}", "Content-Type": "application/json"}
+                        resp = req_lib.post(GROQ_URL, json=payload, headers=headers, timeout=10)
+                        r = resp.json()["choices"][0]["message"]["content"].strip()
+                        if r: translated = r
+                    except:
+                        pass
+                if translated:
+                    self._json(200, {"translated":translated, "elapsed":round(time.time()-t0,2)})
+                else:
+                    self._json(200, {"translated":text, "note":"traduzione non disponibile"})
 
             elif self.path=="/api/tts":
                 text  = body.get("text","")
@@ -1137,6 +1305,35 @@ class H(BaseHTTPRequestHandler):
                 result = rag.add_folder(folder, recursive)
                 self._json(200,{"result":result})
 
+            elif self.path=="/api/rag/add_folder_stream":
+                """SSE streaming: indicizza cartella con progress bar"""
+                folder = body.get("folder_path","")
+                recursive = body.get("recursive", True)
+                if not folder: self._json(400,{"error":"folder_path mancante"}); return
+
+                self.send_response(200)
+                self.send_header("Content-Type","text/event-stream")
+                self.send_header("Cache-Control","no-cache")
+                self.send_header("Connection","keep-alive")
+                self._cors(); self.end_headers()
+
+                def on_progress(current, total, file_name, status):
+                    try:
+                        pct = round(current / total * 100, 1) if total > 0 else 0
+                        self._sse_event({
+                            "type": "progress",
+                            "current": current,
+                            "total": total,
+                            "percent": pct,
+                            "file": file_name,
+                            "status": status
+                        })
+                    except:
+                        pass
+
+                result = rag.add_folder(folder, recursive, progress_callback=on_progress)
+                self._sse_event({"type": "complete", "result": result})
+
             elif self.path=="/api/rag/ingest":
                 """Indicizza la cartella data/documents/ e data/"""
                 from jarvis_rag import DOCS_DIR
@@ -1146,6 +1343,57 @@ class H(BaseHTTPRequestHandler):
                         r = rag.add_folder(folder, recursive=True)
                         results.append({"folder": folder, **r})
                 self._json(200,{"results": results})
+
+            elif self.path=="/api/rag/update":
+                doc_id = body.get("doc_id", 0)
+                if not doc_id: self._json(400, {"error": "doc_id mancante"}); return
+                result = rag.update_document(
+                    doc_id,
+                    title=body.get("title"),
+                    content=body.get("content"),
+                    source=body.get("source"),
+                    metadata=body.get("metadata")
+                )
+                self._json(200, {"result": result})
+
+            elif self.path=="/api/rag/reembed":
+                """Rigenera tutti gli embedding"""
+                self.send_response(200)
+                self.send_header("Content-Type","text/event-stream")
+                self.send_header("Cache-Control","no-cache")
+                self.send_header("Connection","keep-alive")
+                self._cors(); self.end_headers()
+
+                def on_progress(current, total, label, status):
+                    try:
+                        pct = round(current / total * 100, 1) if total > 0 else 0
+                        self._sse_event({
+                            "type": "progress",
+                            "current": current,
+                            "total": total,
+                            "percent": pct,
+                            "label": label,
+                            "status": status
+                        })
+                    except:
+                        pass
+
+                result = rag.reembed_all(progress_callback=on_progress)
+                self._sse_event({"type": "complete", "result": result})
+
+            elif self.path=="/api/rag/search_by_source":
+                query = body.get("query", "")
+                limit = body.get("limit", 50)
+                if not query: self._json(400, {"error": "query mancante"}); return
+                self._json(200, {"documents": rag.search_by_source(query, limit)})
+
+            elif self.path=="/api/rag/export":
+                self._json(200, rag.export_json())
+
+            elif self.path=="/api/rag/dedup":
+                threshold = body.get("threshold", 0.95)
+                result = rag.deduplicate(threshold)
+                self._json(200, {"result": result})
 
             elif self.path=="/api/approval/approve":
                 request_id = body.get("request_id","")
@@ -1184,7 +1432,169 @@ class H(BaseHTTPRequestHandler):
                 result = telegram_send(chat_id if chat_id else None, message)
                 self._json(200, {"result": result})
 
-            elif self.path=="/api/export":
+            elif self.path == "/api/vision/analyze":
+                img = body.get("image_path", "")
+                self._json(200, vision.analyze_screenshot(img if img else None))
+
+            elif self.path == "/api/vision/ocr":
+                img = body.get("image_path", "")
+                self._json(200, {"text": vision.read_text(img if img else None)})
+
+            elif self.path == "/api/vision/qr":
+                img = body.get("image_path", "")
+                self._json(200, {"codes": vision.detect_qr(img if img else None)})
+
+            elif self.path == "/api/vision/describe":
+                img = body.get("image_path", "")
+                if not img: self._json(400, {"error": "image_path required"}); return
+                self._json(200, {"description": vision.describe_image(img)})
+
+            elif self.path == "/api/vision/region":
+                x = body.get("x", 0); y = body.get("y", 0); w = body.get("w", 0); h = body.get("h", 0)
+                self._json(200, vision.analyze_region(x, y, w, h))
+
+            elif self.path == "/api/voice/say":
+                text = body.get("text", "")
+                if not text: self._json(400, {"error": "Text required"}); return
+                v = body.get("voice", voice.current_voice)
+                speed = body.get("speed", 1.0)
+                self._json(200, {"result": voice.say(text, v, speed)})
+
+            elif self.path == "/api/voice/set":
+                v = body.get("voice", "")
+                if not v: self._json(400, {"error": "Voice required"}); return
+                self._json(200, {"result": voice.set_voice(v)})
+
+            elif self.path == "/api/os/focus":
+                title = body.get("title", "")
+                if not title: self._json(400, {"error": "Title required"}); return
+                self._json(200, {"result": os_control.focus_window(title)})
+
+            elif self.path == "/api/os/move":
+                title = body.get("title", "")
+                x = body.get("x", 0); y = body.get("y", 0)
+                w = body.get("width"); h = body.get("height")
+                self._json(200, {"result": os_control.move_window(title, x, y, w, h)})
+
+            elif self.path == "/api/os/minimize":
+                title = body.get("title", "")
+                if not title: self._json(400, {"error": "Title required"}); return
+                self._json(200, {"result": os_control.minimize_window(title)})
+
+            elif self.path == "/api/os/maximize":
+                title = body.get("title", "")
+                if not title: self._json(400, {"error": "Title required"}); return
+                self._json(200, {"result": os_control.maximize_window(title)})
+
+            elif self.path == "/api/os/dock":
+                action = body.get("action", "")
+                if action == "autohide":
+                    self._json(200, {"result": os_control.dock_autohide(body.get("enabled", True))})
+                elif action == "position":
+                    self._json(200, {"result": os_control.dock_position(body.get("position", "bottom"))})
+                else:
+                    self._json(400, {"error": "Invalid dock action"})
+
+            elif self.path == "/api/os/wallpaper":
+                img = body.get("image_path", "")
+                self._json(200, {"result": os_control.set_wallpaper(img if img else None)})
+
+            elif self.path == "/api/os/screensaver":
+                os_control.screensaver()
+                self._json(200, {"result": "Screensaver started"})
+
+            elif self.path == "/api/os/empty_trash":
+                self._json(200, {"result": os_control.empty_trash()})
+
+            elif self.path == "/api/os/dark_mode":
+                self._json(200, {"result": os_control.toggle_dark_mode()})
+
+            elif self.path == "/api/os/pref_pane":
+                pane = body.get("pane", "")
+                if not pane: self._json(400, {"error": "Pane required"}); return
+                self._json(200, {"result": os_control.open_pref_pane(pane)})
+
+            elif self.path == "/api/security/check":
+                cmd = body.get("command", "")
+                if not cmd: self._json(400, {"error": "Command required"}); return
+                safe, reason, risk = security.check_command_safety(cmd)
+                self._json(200, {"safe": safe, "reason": reason, "risk": risk})
+
+            elif self.path == "/api/security/rule":
+                action = body.get("action", "add")
+                pattern = body.get("pattern", "")
+                level = body.get("level", "read")
+                if action == "add":
+                    self._json(200, {"result": security.add_permission_rule(pattern, level)})
+                elif action == "remove":
+                    self._json(200, {"result": security.remove_permission_rule(pattern)})
+                else:
+                    self._json(400, {"error": "Invalid action"})
+
+            elif self.path == "/api/pantheon/register":
+                name = body.get("name", "")
+                caps = body.get("capabilities", "")
+                endpoint = body.get("endpoint", "")
+                if not name: self._json(400, {"error": "Name required"}); return
+                cl = [c.strip() for c in caps.split(",")] if caps else ["general"]
+                self._json(200, pantheon.register_agent(name, cl, endpoint))
+
+            elif self.path == "/api/pantheon/delegate":
+                desc = body.get("description", "")
+                agent_name = body.get("agent", "")
+                if not desc: self._json(400, {"error": "Description required"}); return
+                self._json(200, pantheon.delegate(desc, agent_name if agent_name else None))
+
+            elif self.path == "/api/pantheon/transfer":
+                frm = body.get("from_agent", "")
+                to = body.get("to_agent", "")
+                amount = body.get("amount", 0)
+                reason = body.get("reason", "")
+                if not frm or not to: self._json(400, {"error": "from_agent and to_agent required"}); return
+                ok, msg = pantheon.db.transfer_credits(frm, to, amount, reason)
+                self._json(200, {"success": ok, "message": msg})
+
+            elif self.path == "/api/pantheon/message":
+                to = body.get("to_agent", "")
+                subject = body.get("subject", "")
+                msg_body = body.get("body", "")
+                if not to or not subject: self._json(400, {"error": "to_agent and subject required"}); return
+                self._json(200, {"result": pantheon.send_message(to, subject, msg_body)})
+
+            elif self.path == "/api/pantheon/broadcast":
+                subject = body.get("subject", "")
+                msg_body = body.get("body", "")
+                if not subject: self._json(400, {"error": "Subject required"}); return
+                self._json(200, {"result": pantheon.broadcast(subject, msg_body)})
+
+            elif self.path == "/api/pantheon/task/complete":
+                task_id = body.get("task_id", "")
+                result = body.get("result", "")
+                error = body.get("error", "")
+                if not task_id: self._json(400, {"error": "task_id required"}); return
+                self._json(200, {"result": pantheon.complete_task(task_id, result, error)})
+
+            elif self.path == "/api/plugins/install":
+                source = body.get("source", "")
+                name = body.get("name", "")
+                if not source: self._json(400, {"error": "Source required"}); return
+                self._json(200, {"result": plugins.install(source, name if name else None)})
+
+            elif self.path == "/api/plugins/uninstall":
+                name = body.get("name", "")
+                if not name: self._json(400, {"error": "Name required"}); return
+                self._json(200, {"result": plugins.uninstall(name)})
+
+            elif self.path == "/api/plugins/toggle":
+                name = body.get("name", "")
+                enable = body.get("enable", True)
+                if not name: self._json(400, {"error": "Name required"}); return
+                if enable:
+                    self._json(200, {"result": plugins.enable(name)})
+                else:
+                    self._json(200, {"result": plugins.disable(name)})
+
+            elif self.path == "/api/export":
                 fmt = body.get("format","json")
                 convos = memory.get_recent_conversations(100)
                 if fmt == "markdown":
@@ -1229,7 +1639,7 @@ if __name__=="__main__":
     print(f"  SSE  →  Streaming + TTS chunks abilitati")
     print(f"  SQLite → WAL mode + busy_timeout")
     print(f"  Wake →  disattivato")
-    print(f"  HUD  →  Cyberpunk v9.0")
+    print(f"  HUD  →  Cyberpunk v11.0 — Vision + Voice + OS Control + Security + Pantheon + Plugins")
     print("─"*52)
     if cfg["groq"]["api_key"]=="YOUR_GROQ_API_KEY_HERE":
         print("  ⚠  Groq API key mancante in config.json!")
