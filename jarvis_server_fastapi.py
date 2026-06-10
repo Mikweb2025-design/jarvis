@@ -312,6 +312,9 @@ class VideoAnalyticsStart(BaseModel):
 class VideoAnalyticsAction(BaseModel):
     action: str = "status"
 
+class VideoAnalyticsCalibrate(BaseModel):
+    value: float = 1.0
+
 class RAGUpdate(BaseModel):
     doc_id: int
     title: Optional[str] = None
@@ -1940,6 +1943,11 @@ async def api_video_analytics_start(body: VideoAnalyticsStart):
 async def api_video_analytics_stop():
     from jarvis_video_analytics import stop_analytics
     return {"result": stop_analytics()}
+
+@app.post("/api/video/analytics/calibrate")
+async def api_video_analytics_calibrate(body: VideoAnalyticsCalibrate):
+    from jarvis_video_analytics import set_calibration
+    return {"result": set_calibration(body.value)}
 
 # ── Export ──
 

@@ -1,0 +1,74 @@
+<div class="panel-header">
+    <h3>📹 VIDEO ANALYTICS</h3>
+    <span id="vision-status-badge" style="font-size:9px;font-family:var(--fm);color:var(--tx3)"></span>
+    <button onclick="closeVision()">✕</button>
+  </div>
+  <div id="vision-toolbar" style="padding:6px 12px;display:flex;gap:6px;border-bottom:1px solid var(--n3);flex-wrap:wrap">
+    <input id="vision-url-input" value="rtsp://user:pass@camera:554/stream" placeholder="rtsp://user:pass@camera:554/stream" style="flex:3;min-width:200px;background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 8px;font-size:10px;border-radius:3px">
+    <button id="vision-start-btn" onclick="visionStart()" style="background:var(--cy2);color:#000;border:none;padding:4px 12px;border-radius:3px;font-size:9px;cursor:pointer;font-weight:bold">▶ START</button>
+    <button id="vision-stop-btn" onclick="visionStop()" style="background:#f44;color:#fff;border:none;padding:4px 12px;border-radius:3px;font-size:9px;cursor:pointer;font-weight:bold;display:none">⏹ STOP</button>
+    <button onclick="visionReset()" style="background:var(--n2);color:var(--tx2);border:1px solid var(--n3);padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">⟳ RESET</button>
+    <select id="vision-hours" onchange="visionRefresh()" style="background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 6px;font-size:9px;border-radius:3px">
+      <option value="1">1h</option>
+      <option value="6">6h</option>
+      <option value="24" selected>24h</option>
+      <option value="168">7gg</option>
+    </select>
+  </div>
+  <div id="vision-content" style="padding:8px;overflow-y:auto;max-height:calc(85vh - 90px)">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div style="flex:1;min-width:0">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:4px;margin-bottom:6px">
+          <div class="vision-stat-box" style="border:1px solid var(--n3);border-radius:4px;padding:8px;text-align:center;background:rgba(255,255,255,0.02)">
+            <div style="font-size:8px;color:var(--tx3)">🚗 AUTO</div>
+            <div id="vision-cars" class="vision-stat-num" style="font-size:18px;font-weight:bold;color:#0ff">0</div>
+          </div>
+          <div class="vision-stat-box" style="border:1px solid var(--n3);border-radius:4px;padding:8px;text-align:center;background:rgba(255,255,255,0.02)">
+            <div style="font-size:8px;color:var(--tx3)">🚛 CAMION</div>
+            <div id="vision-trucks" class="vision-stat-num" style="font-size:18px;font-weight:bold;color:#f44">0</div>
+          </div>
+          <div class="vision-stat-box" style="border:1px solid var(--n3);border-radius:4px;padding:8px;text-align:center;background:rgba(255,255,255,0.02)">
+            <div style="font-size:8px;color:var(--tx3)">🚌 BUS/MOTO</div>
+            <div id="vision-busmoto" class="vision-stat-num" style="font-size:18px;font-weight:bold;color:#f80">0</div>
+          </div>
+          <div class="vision-stat-box" style="border:1px solid var(--n3);border-radius:4px;padding:8px;text-align:center;background:rgba(255,255,255,0.02)">
+            <div style="font-size:8px;color:var(--tx3)">🧑 PERSONE</div>
+            <div id="vision-people" class="vision-stat-num" style="font-size:18px;font-weight:bold;color:#ff0">0</div>
+          </div>
+          <div class="vision-stat-box" style="border:1px solid var(--n3);border-radius:4px;padding:8px;text-align:center;background:rgba(255,255,255,0.02)">
+            <div style="font-size:8px;color:var(--tx3)">📊 VELOCITÀ</div>
+            <div id="vision-speed" class="vision-stat-num" style="font-size:18px;font-weight:bold;color:#0f0">0 km/h</div>
+          </div>
+        </div>
+        <div id="vision-status" style="padding:6px 8px;background:rgba(255,255,255,0.02);border:1px solid var(--n3);border-radius:4px;font-size:8px;font-family:var(--fm);color:var(--tx2);margin-bottom:6px">
+          <div id="vision-status-text">⏳ caricamento...</div>
+        </div>
+        <div id="vision-calibrate" style="padding:4px 8px;background:rgba(255,255,255,0.02);border:1px solid var(--n3);border-radius:4px;font-size:8px;font-family:var(--fm);margin-bottom:6px;display:flex;align-items:center;gap:8px">
+          <span style="color:var(--tx3)">📐 CALIBRA VELOCITÀ</span>
+          <input id="vision-cal-slider" type="range" min="0.1" max="5.0" step="0.1" value="1.0" style="flex:1;height:4px" oninput="visionUpdateCal(this.value)">
+          <span id="vision-cal-value" style="color:var(--lv);font-family:var(--fd);min-width:30px">1.0</span>
+          <span style="color:var(--tx3)">(più alto = più veloce)</span>
+        </div>
+        <div id="vision-historical" style="padding:6px 8px;background:rgba(255,255,255,0.02);border:1px solid var(--n3);border-radius:4px;font-size:8px;font-family:var(--fm);color:var(--tx2)">
+          <div style="font-weight:bold;color:var(--pp);margin-bottom:2px">📊 STATISTICHE STORICHE</div>
+          <div id="vision-historical-text">⏳ caricamento...</div>
+        </div>
+      </div>
+      <div style="flex:2;min-width:0;position:relative">
+        <div style="border:1px solid var(--n3);border-radius:4px;overflow:hidden;background:#000;aspect-ratio:4/3;position:relative">
+          <canvas id="vision-canvas" style="width:100%;height:100%;display:block"></canvas>
+          <div id="vision-stream-offline" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--tx3);font-size:11px;text-align:center">
+            📹 Stream offline<br><span style="font-size:8px">Avvia l'analisi per vedere il live</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+<style>
+#vision-panel{position:fixed;top:50px;left:10px;width:800px;max-height:85vh;background:rgba(10,10,18,0.97);border:1px solid var(--pp);border-radius:4px;display:none;z-index:1010;overflow:hidden;box-shadow:0 0 30px rgba(170,0,255,0.3);backdrop-filter:blur(16px)}
+#vision-panel.open{display:flex;flex-direction:column}
+#vision-content{flex:1;overflow:hidden}
+.vision-stat-num{font-family:'Orbitron',monospace;transition:all 0.3s}
+.vision-stat-box{transition:all 0.2s}
+.vision-stat-box:hover{border-color:var(--pp);box-shadow:0 0 10px rgba(170,0,255,0.2)}
+</style>

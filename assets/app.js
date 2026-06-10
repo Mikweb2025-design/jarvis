@@ -1060,8 +1060,13 @@ function botmsg(t,actions){
       try{var wd=JSON.parse(a.slice(7));openWebcam(wd.city,wd.lat,wd.lon,wd.video_id)}catch(e){}
     } else if(a.startsWith('WEBCAM_GRID:')){
       try{var wgd=JSON.parse(a.slice(12));openWebcamGrid(wgd)}catch(e){}
-    } else if(a.startsWith('HA_DASHBOARD:')){
-      openHAWidget()
+    } else if(a.startsWith('WORLD_NEWS_GLOBE:')){
+      window.location.hash = '#worldnews';
+      setTimeout(function(){
+        if(typeof wnStartAutoNews === 'function') wnStartAutoNews();
+        var btn = document.getElementById('wn-autonews-btn');
+        if(btn){btn.textContent='🤖 Auto News: ● ON';btn.style.borderColor='#00f0ff';btn.style.color='#00f0ff'}
+      }, 3000);
     } else if(a.startsWith('IMAGE:')){
       var url=a.slice(6).trim();
       // Aggiungi timestamp per bust cache
@@ -1201,6 +1206,26 @@ function openRag(){
 function closeRag(){
   document.getElementById('rag-panel').classList.remove('open');
 }
+// ── Progress bar helpers ──
+function showRagProgress(show){
+  var w=document.getElementById('rag-progress-wrap');
+  var fill=document.getElementById('rag-progress-fill');
+  if(w)w.style.display=show?'block':'none';
+  if(fill){
+    if(show&&fill.style.width==='0%')fill.classList.add('active');
+    else fill.classList.remove('active');
+  }
+}
+function updateRagProgress(pct,label){
+  var fill=document.getElementById('rag-progress-fill');
+  var lbl=document.getElementById('rag-progress-label');
+  if(fill){
+    fill.style.width=Math.min(pct,100)+'%';
+    if(pct>=100)fill.classList.remove('active');
+    else if(pct>0)fill.classList.add('active');
+  }
+  if(lbl)lbl.textContent=label||'';
+}
 function loadRag(){
   fetch(SRV+'/api/rag/stats').then(function(r){return r.json()}).then(function(s){
     document.getElementById('rag-count-label').textContent=s.documents+' docs / '+s.chunks+' chunk';
@@ -1215,7 +1240,7 @@ function loadRag(){
 function renderRag(list){
   var el=document.getElementById('rag-list');
   var lbl=document.getElementById('rag-count-label');
-  if(!list||!list.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--tx3);font-family:var(--fm);font-size:10px">NESSUN DOCUMENTO INDICIZZATO<br><span style="font-size:8px">usa + FILE o + CARTELLA o 📂 INDICIZZA TUTTO</span></div>';return;}
+  if(!list||!list.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--tx3);font-family:var(--fm);font-size:10px">NESSUN DOCUMENTO INDICIZZATO<br><span style="font-size:8px">usa + FILE o + CARTELLA o 📂 INDICIZZA</span></div>';return;}
   el.innerHTML=list.map(function(d){
     var dt=d.created_at?(d.created_at.replace('T',' ').slice(0,16)):'';
     var meta=d.metadata?JSON.parse(d.metadata||'{}'):{};
@@ -1249,6 +1274,34 @@ function addRagFile(){
       }
       loadRag();
     }).catch(function(e){sysmsg('⚠ RAG errore: '+e.message)});
+}
+function addRagFolderStream(){
+  var inp=document.getElementById('rag-add-file');
+  var path=(inp?inp.value:'').trim();
+  if(!path){sysmsg('⚠ RAG: inserisci un percorso cartella valido');return;}
+  if(inp)inp.value='';
+  var pw=document.getElementById('rag-progress-wrap');
+  console.log('[RAG] addRagFolderStream called, progress-wrap:',pw);
+  showRagProgress(true);
+  updateRagProgress(0,'Indicizzazione in corso... 0%');
+  sysmsg('📂 RAG: indicizzazione '+path+' ...');
+  fetch(SRV+'/api/rag/add_folder',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({folder_path:path,recursive:true})})
+    .then(function(r){return r.json()}).then(function(d){
+      if(d.error){sysmsg('⚠ RAG cartella: '+d.error);loadRag();showRagProgress(false);return;}
+      var r=d.result||{};
+      if(r.status==='error'){
+        sysmsg('⚠ RAG cartella: '+(r.message||'errore sconosciuto'));
+      }else if(r.status==='ok'){
+        updateRagProgress(100,'✅ '+r.indexed+'/'+r.total+' file indicizzati');
+        setTimeout(function(){showRagProgress(false)},1500);
+        sysmsg('📂 RAG: indicizzati '+(r.indexed||0)+'/'+(r.total||0)+' file'+(r.skipped?' ('+r.skipped+' già presenti)':''));
+      }else{
+        sysmsg('⚠ RAG cartella: risposta sconosciuta');
+        showRagProgress(false);
+      }
+      loadRag();
+    }).catch(function(e){sysmsg('⚠ RAG errore: '+e.message);showRagProgress(false)});
 }
 function addRagFolder(){
   var inp=document.getElementById('rag-add-file');
@@ -1303,6 +1356,72 @@ function clearRag(){
       loadRag();
     }).catch(function(e){sysmsg('⚠ RAG svuota errore: '+e.message)});
 }
+function reembedRag(){
+  if(!confirm('🔄 RIGENERARE TUTTI gli embedding? (utile dopo cambio modello)'))return;
+  showRagProgress(true);
+  updateRagProgress(0,'Re-embedding chunk...');
+  sysmsg('🔄 RAG: rigenerazione embedding...');
+  fetch(SRV+'/api/rag/reembed',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){
+      var reader=r.body.getReader();
+      var decoder=new TextDecoder();
+      var buffer='';
+      function readChunk(){
+        reader.read().then(function(d){
+          if(d.done){showRagProgress(false);loadRag();return;}
+          buffer+=decoder.decode(d.value,{stream:true});
+          var lines=buffer.split('\n');
+          buffer=lines.pop()||'';
+          lines.forEach(function(line){
+            if(line.startsWith('data: ')){
+              try{
+                var ev=JSON.parse(line.slice(6));
+                if(ev.type==='progress'){
+                  updateRagProgress(ev.percent,'Re-embedding: '+ev.label);
+                }else if(ev.type==='complete'){
+                  var r2=ev.result||{};
+                  sysmsg('🔄 RAG: re-embedded '+(r2.reembedded||0)+' chunk');
+                  showRagProgress(false);
+                  loadRag();
+                }
+              }catch(e){}
+            }
+          });
+          readChunk();
+        }).catch(function(e){
+          showRagProgress(false);
+          sysmsg('⚠ RAG reembed: '+e.message);
+        });
+      }
+      readChunk();
+    }).catch(function(e){
+      showRagProgress(false);
+      sysmsg('⚠ RAG reembed: '+e.message);
+    });
+}
+function exportRag(){
+  sysmsg('💾 RAG: esportazione database...');
+  fetch(SRV+'/api/rag/export',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json()}).then(function(d){
+      var blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='rag_export_'+new Date().toISOString().slice(0,10)+'.json';
+      a.click();
+      sysmsg('💾 RAG: esportati '+(d.documents?d.documents.length:0)+' documenti');
+    }).catch(function(e){sysmsg('⚠ RAG export: '+e.message)});
+}
+function dedupRag(){
+  if(!confirm('🧹 AVVIARE DEDUPLICAZIONE? (rimuove documenti con contenuto identico o quasi)'))return;
+  sysmsg('🧹 RAG: deduplicazione in corso...');
+  fetch(SRV+'/api/rag/dedup',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({threshold:0.95})})
+    .then(function(r){return r.json()}).then(function(d){
+      var r=d.result||{};
+      sysmsg('🧹 RAG: rimossi '+(r.removed||0)+' duplicati');
+      loadRag();
+    }).catch(function(e){sysmsg('⚠ RAG dedup: '+e.message)});
+}
 
 // ══════════════════════════════════════════════════
 // ── FEATURE: WORLD NEWS PANEL v10.0 ──
@@ -1313,16 +1432,31 @@ function openWorldNews(){
     if(!p){console.error('WN: no panel');return}
     p.style.display='flex';
     p.classList.add('open');
-    setTimeout(function(){
-      if(typeof wnInit==='function') wnInit();
-      else console.error('WN: wnInit not defined');
-    }, 100);
+    var retries=0;
+    function tryInit(){
+      if(typeof wnInit==='function'){wnInit();return}
+      retries++;
+      if(retries<30) setTimeout(tryInit, 200);
+      else console.error('WN: wnInit not defined after 30 retries');
+    }
+    setTimeout(tryInit, 100);
   } catch(e){console.error('WN open error:',e)}
 }
 function closeWorldNews(){
   var p=document.getElementById('worldnews-panel');
-  if(p){p.style.display='none';p.classList.remove('open')}
+  if(p){
+    p.style.transition='opacity .3s ease,transform .3s ease';
+    p.style.opacity='0';
+    p.style.transform='scale(0.95)';
+    setTimeout(function(){
+      p.style.display='none';
+      p.classList.remove('open');
+      p.style.opacity='1';
+      p.style.transform='scale(1)';
+    }, 300);
+  }
 }
+window.closeWorldNews = closeWorldNews;
 
 // ══════════════════════════════════════════════════
 // ── FEATURE: TRENDS PANEL v9.3 ──
@@ -1425,3 +1559,398 @@ window.addEventListener('DOMContentLoaded',function(){
   initHoloCanvas();
   initWidgetCanvas();
 });
+
+// ── escHtml alias (used by pages loaded via innerHTML) ──
+function escHtml(s){return esc(s)}
+
+// ── GIT ──
+var gitView = 'status';
+async function openGit(){
+  document.getElementById('git-panel').classList.add('open');
+  await gitStatus();
+}
+function closeGit(){
+  document.getElementById('git-panel').classList.remove('open');
+}
+async function gitCall(tool, args){
+  var r = await fetch('/api/tool', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tool:tool, args:args||{}})});
+  return (await r.json()).result || '';
+}
+function gitRender(text){
+  var el = document.getElementById('git-content');
+  el.innerHTML = '<pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-family:var(--fm);color:var(--tx2);font-size:9px">'+escHtml(text)+'</pre>';
+}
+async function gitStatus(){
+  gitView = 'status';
+  var el = document.getElementById('git-content');
+  el.innerHTML = '<div style="padding:12px;color:var(--tx3);font-size:9px">⏳ git status...</div>';
+  try {
+    var s = await gitCall('git_status');
+    var br = '';
+    if(s && s.includes('On branch')) br = s.match(/On branch\s+(\S+)/)?.[1]||'';
+    document.getElementById('git-branch-label').textContent = br ? '⎇ '+br : '';
+    gitRender(s);
+  } catch(e){ gitRender('Errore: '+e.message); }
+}
+async function gitLog(){
+  gitView = 'log';
+  var el = document.getElementById('git-content');
+  el.innerHTML = '<div style="padding:12px;color:var(--tx3);font-size:9px">⏳ git log...</div>';
+  try {
+    var s = await gitCall('git_log', {limit:30});
+    gitRender(s);
+  } catch(e){ gitRender('Errore: '+e.message); }
+}
+async function gitBranches(){
+  gitView = 'branches';
+  var el = document.getElementById('git-content');
+  el.innerHTML = '<div style="padding:12px;color:var(--tx3);font-size:9px">⏳ git branches...</div>';
+  try {
+    var s = await gitCall('git_branches');
+    gitRender(s);
+  } catch(e){ gitRender('Errore: '+e.message); }
+}
+async function gitDiff(){
+  gitView = 'diff';
+  var el = document.getElementById('git-content');
+  el.innerHTML = '<div style="padding:12px;color:var(--tx3);font-size:9px">⏳ git diff...</div>';
+  try {
+    var s = await gitCall('git_diff');
+    gitRender(s || '(nessuna modifica)');
+  } catch(e){ gitRender('Errore: '+e.message); }
+}
+async function gitCommit(){
+  var msg = prompt('Messaggio commit:');
+  if(!msg) return;
+  var el = document.getElementById('git-content');
+  el.innerHTML = '<div style="padding:12px;color:var(--cy);font-size:9px">⏳ git commit...</div>';
+  try {
+    var r = await fetch('/api/git/commit', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:msg})});
+    var d = await r.json();
+    el.innerHTML = '<pre style="margin:0;color:#0f0;font-size:9px">'+(d.status||d.result||JSON.stringify(d))+'</pre>';
+  } catch(e){
+    el.innerHTML = '<pre style="margin:0;color:#f44;font-size:9px">Errore: '+e.message+'</pre>';
+  }
+}
+
+// ── GOALS ──
+async function openGoals(){
+  document.getElementById('goals-panel').classList.add('open');
+  await goalsRefresh();
+}
+function closeGoals(){
+  document.getElementById('goals-panel').classList.remove('open');
+}
+async function goalsRefresh(){
+  var el = document.getElementById('goals-content');
+  el.innerHTML = '<div style="padding:12px;text-align:center;color:var(--tx3);font-size:9px">⏳ caricamento...</div>';
+  try {
+    var r = await fetch('/api/goals');
+    var d = await r.json();
+    var goals = d.goals || [];
+    document.getElementById('goals-count').textContent = goals.length+' GOALS';
+    el.innerHTML = '';
+    if(goals.length === 0){
+      el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--tx3);font-size:10px">Nessun goal. Creane uno sopra!</div>';
+      return;
+    }
+    goals.forEach(function(g){
+      var title = g.title||'Goal';
+      var desc = g.description||'';
+      var krs = Array.isArray(g.key_results) ? g.key_results : [];
+      var done = krs.filter(function(k){return k.current >= k.target}).length;
+      var pct = g.progress || (krs.length > 0 ? Math.round(done/krs.length*100) : 0);
+      var card = document.createElement('div');
+      card.className = 'goal-card';
+      var krHtml = krs.map(function(kr){
+        var t = kr.description||'KR';
+        var crossed = kr.current >= kr.target;
+        return '<div class="goal-kr-item'+(crossed?' crossed':'')+'">'+
+          '<input type="checkbox"'+(crossed?' checked':'')+' onchange="goalsToggleKR('+g.id+','+kr.id+',this.checked)">'+
+          '<span>'+(crossed?'✅ ':'⬜ ')+escHtml(t)+' ('+kr.current+'/'+kr.target+kr.unit+')</span></div>';
+      }).join('');
+      card.innerHTML = '<h4>'+escHtml(title)+' <span style="font-size:9px;color:var(--tx3)">'+pct+'%</span></h4>'+
+        (desc ? '<div class="gdesc">'+escHtml(desc)+'</div>' : '')+
+        '<div class="goal-progress"><div class="goal-progress-fill" style="width:'+pct+'%"></div></div>'+
+        '<div style="font-size:8px;color:var(--tx3);margin-bottom:4px">'+done+'/'+krs.length+' KR</div>'+
+        krHtml+
+        '<div class="goal-actions">'+
+        '<button onclick="goalsAddKR('+g.id+')">+ KR</button>'+
+        '<button onclick="goalsDelete('+g.id+')" style="color:#f44">🗑</button>'+
+        '</div>';
+      el.appendChild(card);
+    });
+  } catch(e){
+    el.innerHTML = '<div style="padding:12px;color:#f44;font-size:10px">Errore: '+e.message+'</div>';
+  }
+}
+async function goalsCreate(){
+  var title = document.getElementById('goals-title-input').value.trim();
+  var desc = document.getElementById('goals-desc-input').value.trim();
+  if(!title) return;
+  await fetch('/api/goals/create', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({title:title, description:desc})});
+  document.getElementById('goals-title-input').value = '';
+  document.getElementById('goals-desc-input').value = '';
+  goalsRefresh();
+}
+async function goalsAddKR(goalId){
+  var title = prompt('KR title:');
+  if(!title) return;
+  await fetch('/api/goals/add_kr', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({goal_id:goalId, title:title, target:100})});
+  goalsRefresh();
+}
+async function goalsToggleKR(goalId, krId, checked){
+  await fetch('/api/goals/update_kr', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({goal_id:goalId, kr_id:krId, current:checked?100:0})});
+  goalsRefresh();
+}
+async function goalsDelete(goalId){
+  if(!confirm('Eliminare questo goal?')) return;
+  await fetch('/api/goals/delete', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:goalId})});
+  goalsRefresh();
+}
+
+// ── VISION ──
+var visionTimer = null;
+var visionFrameTimer = null;
+var visionMjpegImg = null;
+async function openVision(){
+  closeVision();
+  document.getElementById('vision-panel').classList.add('open');
+  await visionRefresh();
+}
+function closeVision(){
+  document.getElementById('vision-panel').classList.remove('open');
+  if(visionTimer){ clearInterval(visionTimer); visionTimer = null; }
+  if(visionFrameTimer){ clearInterval(visionFrameTimer); visionFrameTimer = null; }
+  stopVisionMjpeg();
+}
+async function visionRefresh(){
+  var el = document.getElementById('vision-content');
+  if(!el) return;
+  // Fetch status
+  try {
+    var rs = await fetch('/api/video/analytics/status');
+    var st = await rs.json();
+    var rc = await fetch('/api/video/analytics/counts?hours='+encodeURIComponent(document.getElementById('vision-hours')?.value||24));
+    var ct = await rc.json();
+    visionUpdateUI(st, ct);
+  } catch(e){
+    var ste = document.getElementById('vision-status-text');
+    if(ste) ste.innerHTML = '<span style="color:#f44">Errore: '+e.message+'</span>';
+  }
+}
+function visionUpdateUI(st, ct){
+  var ste = document.getElementById('vision-status-text');
+  if(ste){
+    var modelIcon = st.model && st.model.includes('YOLO') ? '🧠' : '⚙';
+    var runIcon = st.running ? '🟢' : '🔴';
+    ste.innerHTML = runIcon+' <b>Stato:</b> '+(st.running?'Attivo':'Fermo')+
+      ' | '+modelIcon+' <b>Modello:</b> '+(st.model||'—')+
+      ' | 📡 <b>FPS:</b> '+(st.fps||0).toFixed(1)+
+      ' | 🖼 <b>Frame:</b> '+(st.frames_processed||0)+
+      ' | 🎯 <b>Linea:</b> '+(st.detection_line ? Math.round(st.detection_line*100)+'%' : '—')+
+      ' | ⚡ <b>Vel:</b> '+(st.latest_speed_kmh||0)+' km/h';
+  }
+  var startBtn = document.getElementById('vision-start-btn');
+  var stopBtn = document.getElementById('vision-stop-btn');
+  var offline = document.getElementById('vision-stream-offline');
+    if(st.running){
+    if(startBtn) startBtn.style.display = 'none';
+    if(stopBtn) stopBtn.style.display = 'inline-block';
+    if(!visionTimer) visionTimer = setInterval(visionRefresh, 2000);
+    if(offline) offline.style.display = 'none';
+    startVisionMjpeg();
+  } else {
+    if(startBtn) startBtn.style.display = 'inline-block';
+    if(stopBtn) stopBtn.style.display = 'none';
+    if(visionTimer){ clearInterval(visionTimer); visionTimer = null; }
+    stopVisionMjpeg();
+    if(visionFrameTimer){ clearInterval(visionFrameTimer); visionFrameTimer = null; }
+    if(offline) offline.style.display = 'block';
+  }
+  if(ct){
+    var sessionCars = st && st.car_count_session != null ? st.car_count_session : (ct.cars||0);
+    var sessionPeople = st && st.people_count_session != null ? st.people_count_session : (ct.people||0);
+    var sessionTrucks = st && st.truck_count_session != null ? st.truck_count_session : 0;
+    var sessionBuses = st && st.bus_count_session != null ? st.bus_count_session : 0;
+    var sessionMotos = st && st.moto_count_session != null ? st.moto_count_session : 0;
+    var vc = document.getElementById('vision-cars');
+    if(vc) vc.textContent = sessionCars;
+    var vt = document.getElementById('vision-trucks');
+    if(vt) vt.textContent = sessionTrucks;
+    var vbm = document.getElementById('vision-busmoto');
+    if(vbm) vbm.textContent = sessionBuses + sessionMotos;
+    var vp = document.getElementById('vision-people');
+    if(vp) vp.textContent = sessionPeople;
+    var spd = document.getElementById('vision-speed');
+    var liveSpd = st && st.latest_speed_kmh ? st.latest_speed_kmh : (ct.avg_speed_kmh||0);
+    if(spd) spd.textContent = liveSpd+' km/h';
+    var badge = document.getElementById('vision-status-badge');
+    if(badge) badge.textContent = sessionCars+'🚗 '+sessionTrucks+'🚛 '+sessionPeople+'👤';
+    var hist = document.getElementById('vision-historical-text');
+    if(hist){
+      var since = ct.since ? new Date(ct.since+'Z').toLocaleString() : '—';
+      var liveInfo = st && st.latest_speed_kmh ? '⚡ <b>Ora:</b> '+st.latest_speed_kmh+' km/h | ' : '';
+      hist.innerHTML =
+        liveInfo+
+        '📈 <b>Intervalli:</b> '+ct.intervals+' ore | '+
+        '🚗 <b>Auto:</b> '+ct.cars+' | '+
+        '🚛 <b>Camion:</b> '+sessionTrucks+' | '+
+        '🧑 <b>Persone:</b> '+ct.people+' | '+
+        '📊 <b>Media:</b> '+(ct.avg_speed_kmh||0)+' km/h | '+
+        '⏱ <b>Dal:</b> '+since;
+    }
+  }
+}
+async function visionStart(){
+  var url = document.getElementById('vision-url-input')?.value.trim();
+  if(!url){ alert('Inserisci un URL RTSP valido'); return; }
+  var btn = document.getElementById('vision-start-btn');
+  if(btn) btn.textContent = '⏳...';
+  try {
+    var r = await fetch('/api/video/analytics/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({stream_url: url})});
+    var d = await r.json();
+    await visionRefresh();
+  } catch(e){
+    alert('Errore: '+e.message);
+  }
+  if(btn) btn.innerHTML = '▶ START';
+}
+async function visionStop(){
+  var btn = document.getElementById('vision-stop-btn');
+  if(btn) btn.textContent = '⏳...';
+  try {
+    await fetch('/api/video/analytics/stop', {method:'POST'});
+    await visionRefresh();
+  } catch(e){
+    alert('Errore: '+e.message);
+  }
+  if(btn) btn.innerHTML = '⏹ STOP';
+}
+function startVisionMjpeg(){
+  if(visionMjpegImg) return;
+  var canvas = document.getElementById('vision-canvas');
+  if(!canvas) return;
+  var ctx = canvas.getContext('2d');
+  visionMjpegImg = {active:true};
+  var lastFrame = 0;
+  (function loop(){
+    if(!visionMjpegImg || !visionMjpegImg.active) return;
+    var now = Date.now();
+    if(now - lastFrame < 50){ setTimeout(loop, 50 - (now - lastFrame)); return; }
+    lastFrame = now;
+    fetch('/api/video/analytics/frame?_='+now).then(function(r){
+      if(!r.ok){ setTimeout(loop, 50); return; }
+      return r.blob();
+    }).then(function(blob){
+      if(!blob){ setTimeout(loop, 50); return; }
+      var img = new Image();
+      img.onload = function(){
+        if(!visionMjpegImg || !visionMjpegImg.active){ URL.revokeObjectURL(img.src); return; }
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(img.src);
+        setTimeout(loop, 16);
+      };
+      img.onerror = function(){ URL.revokeObjectURL(img.src); setTimeout(loop, 50); };
+      img.src = URL.createObjectURL(blob);
+    }).catch(function(){ setTimeout(loop, 100); });
+  })();
+}
+function stopVisionMjpeg(){
+  if(visionMjpegImg){ visionMjpegImg.active = false; visionMjpegImg = null; }
+  if(visionFrameTimer){ clearInterval(visionFrameTimer); visionFrameTimer = null; }
+}
+async function visionReset(){
+  if(!confirm('Azzera tutto lo storico video analytics?')) return;
+  try {
+    await fetch('/api/video/analytics/reset', {method:'POST'});
+    await visionRefresh();
+  } catch(e){ alert('Errore: '+e.message); }
+}
+async function visionUpdateCal(val){
+  document.getElementById('vision-cal-value').textContent = val;
+  try {
+    await fetch('/api/video/analytics/calibrate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({value:parseFloat(val)})});
+  } catch(e){}
+}
+
+// ── SETTINGS ──
+async function openSettings(){
+  document.getElementById('settings-panel').classList.add('open');
+  await settingsRefresh();
+}
+function closeSettings(){
+  document.getElementById('settings-panel').classList.remove('open');
+}
+async function settingsRefresh(){
+  await settingsLoadProviders();
+  await settingsLoadVoices();
+  await settingsLoadInfo();
+}
+async function settingsLoadProviders(){
+  var el = document.getElementById('settings-providers');
+  try {
+    var r = await fetch('/api/providers');
+    var d = await r.json();
+    var providersList = d.providers || [];
+    var current = d.current || 'groq';
+    el.innerHTML = '';
+    providersList.forEach(function(name){
+      var btn = document.createElement('button');
+      btn.className = 'st-btn' + (name === current ? ' active' : '');
+      btn.textContent = name.toUpperCase();
+      btn.onclick = function(){ settingsSwitchProvider(name); };
+      el.appendChild(btn);
+    });
+  } catch(e){ el.innerHTML = '<span style="color:var(--tx3);font-size:9px">N/D</span>'; }
+}
+async function settingsLoadVoices(){
+  var el = document.getElementById('settings-voices');
+  try {
+    var r = await fetch('/api/voice/list');
+    var d = await r.json();
+    var voices = Array.isArray(d) ? d : (d.voices||[]);
+    var current = d.current||'';
+    el.innerHTML = '';
+    voices.forEach(function(v){
+      var name = typeof v === 'string' ? v : (v.name||v.id||'');
+      var btn = document.createElement('button');
+      btn.className = 'st-btn' + (name === current ? ' voice-active' : '');
+      btn.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+      btn.onclick = function(){ settingsSetVoice(name); };
+      el.appendChild(btn);
+    });
+  } catch(e){ el.innerHTML = '<span style="color:var(--tx3);font-size:9px">N/D</span>'; }
+}
+async function settingsLoadInfo(){
+  var el = document.getElementById('settings-info');
+  try {
+    var r = await fetch('/api/status');
+    var d = await r.json();
+    el.innerHTML =
+      '🧠 <b>Modello:</b> '+(d.model||'—')+'<br>'+
+      '🎤 <b>Voce:</b> '+(d.voice||'—')+'<br>'+
+      '📦 <b>Tool:</b> '+(d.tools||d.tool_count||'—')+'<br>'+
+      '📚 <b>RAG docs:</b> '+(d.rag_docs||d.rag_count||'—')+'<br>'+
+      '🔋 <b>Versione:</b> '+d.version+'<br>';
+    if(d.uptime) el.innerHTML += '⏱ <b>Uptime:</b> '+d.uptime+'<br>';
+  } catch(e){ el.innerHTML = 'Errore: '+e.message; }
+}
+async function settingsSwitchProvider(name){
+  await fetch('/api/tool', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tool:'providers_switch', args:{provider:name}})});
+  await settingsLoadProviders();
+}
+async function settingsSetVoice(name){
+  await fetch('/api/voice/set', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({voice:name})});
+  await settingsLoadVoices();
+}
