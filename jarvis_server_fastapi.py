@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """jarvis_server_fastapi.py — J.A.R.V.I.S FastAPI v1.0 — Modern async backend"""
-import sys, json, time, os, traceback, threading, re, base64, asyncio
+import sys, json, time, os, traceback, threading, re, base64, asyncio, logging
 import numpy as np
 from pathlib import Path
 from datetime import datetime
@@ -16,6 +16,13 @@ from pydantic import BaseModel, Field
 import uvicorn
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+logger = logging.getLogger("jarvis_fastapi")
+if not logger.handlers:
+    _h = logging.StreamHandler(sys.stdout)
+    _h.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(_h)
+    logger.setLevel(logging.INFO)
 
 from jarvis import load_config, KNOWN_VOICES, KokoroTTS
 from jarvis_agent import JarvisAgent
@@ -39,6 +46,11 @@ from jarvis_security import security
 from jarvis_pantheon import pantheon
 from jarvis_plugins import plugins
 from jarvis_skills import skills
+try:
+    from jarvis_whatsapp_openwa import send_message as _wa_send, send_image as _wa_send_img, send_audio as _wa_send_audio, get_status as _wa_status, ensure_session as _wa_ensure, check_health as _wa_health, OPENWA_URL
+except ImportError:
+    _wa_send = _wa_send_img = _wa_send_audio = _wa_status = _wa_ensure = _wa_health = lambda *a, **kw: {"ok": False, "error": "OpenWA not available"}
+    OPENWA_URL = "http://localhost:2785"
 
 # ── Pydantic Models ──
 
@@ -315,6 +327,15 @@ class VideoAnalyticsAction(BaseModel):
 class VideoAnalyticsCalibrate(BaseModel):
     value: float = 1.0
 
+class WhatsAppSendRequest(BaseModel):
+    to: str
+    text: str
+
+class WhatsAppSendImageRequest(BaseModel):
+    to: str
+    image_url: str
+    caption: Optional[str] = None
+
 class RAGUpdate(BaseModel):
     doc_id: int
     title: Optional[str] = None
@@ -551,6 +572,10 @@ async def lifespan(app: FastAPI):
     try:
         from jarvis_video_analytics import start_analytics
         start_analytics()
+    except:
+        pass
+    try:
+        _ensure_wa_webhook()
     except:
         pass
     yield
@@ -1948,6 +1973,258 @@ async def api_video_analytics_stop():
 async def api_video_analytics_calibrate(body: VideoAnalyticsCalibrate):
     from jarvis_video_analytics import set_calibration
     return {"result": set_calibration(body.value)}
+
+# ── WhatsApp (OpenWA) ──
+
+_wa_webhook_url = "http://127.0.0.1:9999/api/whatsapp/webhook"
+
+def _ensure_wa_webhook():
+    """Registra il webhook su OpenWA se non già presente (es. dopo restart sessione)"""
+    try:
+        st = _wa_status()
+        if not isinstance(st, dict) or not st.get("openwa_available"):
+            return
+        sid = st.get("session_id", "")
+        if not sid:
+            return
+        WA_KEY = None
+        for _kp in [
+            os.path.expanduser("~/OpenWA/data/.api-key"),
+            "/Users/daniele/OpenWA/data/.api-key",
+        ]:
+            if os.path.exists(_kp):
+                WA_KEY = Path(_kp).read_text().strip()
+                break
+        if not WA_KEY:
+            return
+        import urllib.request, json as _json
+        h = {"X-API-Key": WA_KEY, "Content-Type": "application/json"}
+        req = urllib.request.Request(
+            f"{OPENWA_URL}/api/sessions/{sid}/webhooks",
+            headers=h,
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            existing = _json.loads(resp.read())
+            if isinstance(existing, list) and any(w.get("url") == _wa_webhook_url for w in existing):
+                return
+        body = _json.dumps({"url": _wa_webhook_url, "events": ["message.received"]}).encode()
+        req2 = urllib.request.Request(
+            f"{OPENWA_URL}/api/sessions/{sid}/webhooks",
+            data=body,
+            headers=h,
+            method="POST",
+        )
+        with urllib.request.urlopen(req2, timeout=5):
+            pass
+    except Exception as e:
+        logger.warning(f"[WA] Webhook auto-registration skipped: {e}")
+
+@app.get("/api/whatsapp/status")
+async def api_whatsapp_status():
+    return _wa_status()
+
+@app.post("/api/whatsapp/ensure")
+async def api_whatsapp_ensure():
+    return _wa_ensure()
+
+@app.post("/api/whatsapp/send")
+async def api_whatsapp_send(body: WhatsAppSendRequest):
+    global _wa_recent_ids
+    result = _wa_send(body.to, body.text)
+    if isinstance(result, dict) and result.get("ok") and isinstance(result.get("data"), dict):
+        sent_id = result["data"].get("messageId")
+        if sent_id:
+            _wa_recent_ids[sent_id] = time.time()
+    return result
+
+@app.post("/api/whatsapp/send-image")
+async def api_whatsapp_send_image(body: WhatsAppSendImageRequest):
+    return _wa_send_img(body.to, body.image_url, body.caption or "")
+
+_wa_recent_ids: dict[str, float] = {}  # msg_id -> timestamp, per evitare loop
+
+def _process_wa_message(chat_id: str, msg_text: str, is_voice: bool = False):
+    """Processa messaggio WhatsApp in background (thread separato)"""
+    global _wa_recent_ids
+    try:
+        reply = agent.chat(msg_text)
+        if isinstance(reply, tuple):
+            reply = reply[0]
+        reply_text = f"🤖 {reply.strip()}" if isinstance(reply, str) else f"🤖 {str(reply)}"
+
+        if is_voice:
+            try:
+                import edge_tts, tempfile, base64 as b64, subprocess as _sp
+                tts = edge_tts.Communicate(reply_text[:500], voice="it-IT-ElsaNeural")
+                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                    tmp.close()
+                    tts.save(tmp.name)
+                    mp3_path = tmp.name
+                # Converti MP3 → OGG/Opus per compatibilità WhatsApp
+                with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp2:
+                    tmp2.close()
+                    ogg_path = tmp2.name
+                try:
+                    _sp.run(["ffmpeg", "-y", "-i", mp3_path, "-c:a", "libopus", "-b:a", "24k", ogg_path],
+                            capture_output=True, timeout=30, check=True)
+                    with open(ogg_path, "rb") as f:
+                        audio_b64 = b64.b64encode(f.read()).decode()
+                except Exception as cv:
+                    logger.warning(f"[WA] Conversione OGG fallita, uso MP3: {cv}")
+                    with open(mp3_path, "rb") as f:
+                        audio_b64 = b64.b64encode(f.read()).decode()
+                finally:
+                    os.unlink(mp3_path)
+                    try:
+                        os.unlink(ogg_path)
+                    except:
+                        pass
+                result = _wa_send_audio(chat_id, audio_b64, "audio/ogg")
+                if isinstance(result, dict):
+                    if result.get("ok"):
+                        sent_id = result.get("data", {}).get("messageId") if isinstance(result.get("data"), dict) else None
+                        if sent_id:
+                            _wa_recent_ids[sent_id] = time.time()
+                        logger.info(f"[WA] Audio risposta inviata a {chat_id}: {reply_text[:60]}...")
+                    else:
+                        err_detail = result.get("error") or ""
+                        if not err_detail and isinstance(result.get("data"), dict):
+                            err_detail = str(result["data"].get("error", result["data"]))
+                        elif not err_detail:
+                            err_detail = str(result.get("data", ""))[:200]
+                        logger.warning(f"[WA] Audio fallito: {err_detail or 'errore sconosciuto'} — fallback testo")
+                        _wa_send(chat_id, reply_text[:4096])
+                return
+            except Exception as ae:
+                logger.error(f"[WA] Audio fallito, testo fallback: {ae}")
+
+        result = _wa_send(chat_id, reply_text[:4096])
+        if isinstance(result, dict) and result.get("ok") and isinstance(result.get("data"), dict):
+            sent_id = result["data"].get("messageId")
+            if sent_id:
+                _wa_recent_ids[sent_id] = time.time()
+        logger.info(f"[WA] Risposta inviata a {chat_id}: {reply_text[:80]}...")
+    except Exception as e:
+        logger.error(f"[WA] Errore processamento messaggio: {e}")
+
+@app.post("/api/whatsapp/webhook")
+async def api_whatsapp_webhook(body: dict):
+    """Riceve webhook da OpenWA quando arriva un messaggio WhatsApp (fire-and-forget)"""
+    global _wa_recent_ids
+    try:
+        event = body.get("event", "")
+        logger.info(f"[WA] Webhook received: event={event} body_keys={list(body.keys())}")
+        if event == "message.received":
+            data = body.get("data", {})
+            msg_id = data.get("id", "")
+            msg_text = (data.get("body") or "").strip()
+            chat_id = data.get("chatId") or data.get("from", "")
+            from_me = data.get("fromMe", False)
+            is_group = data.get("isGroup", False)
+
+            # Workaround: OpenWA a volte manda @lid come chatId invece del group ID
+            jarvis_group_id = "120363407071302556@g.us"
+            if msg_id.startswith(f"true_{jarvis_group_id}_"):
+                chat_id = jarvis_group_id
+                is_group = True
+
+            sender_name = chat_id.split("@")[0]
+            logger.info(f"[WA] msg_id={msg_id[:30]} chat={chat_id} from_me={from_me} is_group={is_group} text='{msg_text[:50]}'")
+
+            # Dedup: salta messaggi inviati da noi (rilevati via API, match per prefisso)
+            now = time.time()
+            _wa_recent_ids = {k: v for k, v in _wa_recent_ids.items() if now - v < 30}
+            _dedup_found = any(msg_id.startswith(k[:30]) or k.startswith(msg_id) for k in _wa_recent_ids)
+            if msg_id in _wa_recent_ids or _dedup_found:
+                logger.info(f"[WA] Dedup: {msg_id[:30]} saltato")
+                return {"ok": True, "action": "dedup"}
+
+            # Salta messaggi di testo del bot fuori dal gruppo
+            if from_me and chat_id != jarvis_group_id:
+                media = data.get("media")
+                if not (media and isinstance(media, dict) and media.get("data")):
+                    logger.info(f"[WA] Ignorato from_me fuori dal gruppo: {sender_name}")
+                    return {"ok": True, "action": "ignored_from_me"}
+
+            # ── Voice message transcription ──
+            was_voice = False
+            media = data.get("media")
+            if media and isinstance(media, dict):
+                logger.info(f"[WA] Media keys: {list(media.keys())}, mimetype={media.get('mimetype','?')}, has_data={'data' in media}, has_url={'url' in media}")
+                media_data = media.get("data") or ""
+                media_url = media.get("url", "")
+                mimetype = media.get("mimetype", "")
+                msg_type = data.get("type", "")
+                if msg_type == "ptt" or "audio" in mimetype:
+                    import tempfile, urllib.request
+                    ext = ".ogg"
+                    if "mp4" in mimetype or "aac" in mimetype:
+                        ext = ".m4a"
+                    audio_bytes = b""
+                    if media_data:
+                        try:
+                            audio_bytes = base64.b64decode(media_data)
+                        except Exception as de:
+                            logger.error(f"[WA] Errore decode base64: {de}")
+                    elif media_url:
+                        try:
+                            with urllib.request.urlopen(media_url, timeout=15) as ru:
+                                audio_bytes = ru.read()
+                            logger.info(f"[WA] Audio scaricato da URL: {len(audio_bytes)} bytes")
+                        except Exception as ue:
+                            logger.error(f"[WA] Errore download audio da URL: {ue}")
+                    if audio_bytes:
+                        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                            tmp.write(audio_bytes)
+                            audio_path = tmp.name
+                        try:
+                            from faster_whisper import WhisperModel
+                            _whisper_model = getattr(api_whatsapp_webhook, "_whisper", None)
+                            if _whisper_model is None:
+                                _whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+                                api_whatsapp_webhook._whisper = _whisper_model
+                            segs, _ = _whisper_model.transcribe(audio_path, language="it", beam_size=1)
+                            transcribed = " ".join(s.text.strip() for s in segs).strip()
+                            logger.info(f"[WA] Trascrizione: {transcribed[:150]}")
+                            if transcribed:
+                                msg_text = transcribed
+                                was_voice = True
+                        except Exception as xe:
+                            logger.error(f"[WA] Errore trascrizione: {xe}")
+                        finally:
+                            try:
+                                os.unlink(audio_path)
+                            except:
+                                pass
+
+            if not msg_text:
+                logger.info(f"[WA] Messaggio vuoto ignorato")
+                return {"ok": True, "action": "ignored_empty"}
+
+            # Blocklist: numeri bloccati (in formato @c.us o @lid)
+            _wa_blocked = {"65803361755387"}
+            sender_digits = re.sub(r"\D", "", sender_name)
+            if sender_digits in _wa_blocked:
+                logger.info(f"[WA] Bloccato: {sender_name} (digits={sender_digits})")
+                return {"ok": True, "action": "blocked"}
+
+            # Salta messaggi che iniziano con 🤖 (sono risposte del bot)
+            if msg_text.startswith("🤖"):
+                logger.info(f"[WA] Risposta del bot ignorata (🤖)")
+                return {"ok": True, "action": "ignored_bot_reply"}
+
+            logger.info(f"[WA] Da {sender_name} chat={chat_id} {'[GRUPPO]' if is_group else ''}: {msg_text[:100]}")
+
+            # Processo in background: return immediato, evita timeout OpenWA
+            import threading
+            t = threading.Thread(target=_process_wa_message, args=(chat_id, msg_text), kwargs={"is_voice": was_voice}, daemon=True)
+            t.start()
+            return {"ok": True, "action": "accepted", "message": "Processing in background"}
+        return {"ok": True, "action": f"event_{event}"}
+    except Exception as e:
+        logger.error(f"[WA] Webhook error: {e}")
+        return {"ok": False, "error": str(e)}
 
 # ── Export ──
 

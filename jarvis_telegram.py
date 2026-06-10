@@ -1,5 +1,5 @@
 """jarvis_telegram.py — Telegram bot module for Jarvis (polling-based, zero new deps)"""
-import os, sys, json, time, threading, logging
+import os, sys, json, time, threading, logging, base64, tempfile
 
 ENABLED = False
 BOT_TOKEN = None
@@ -8,6 +8,7 @@ _agent_instance = None
 _bot_thread = None
 _running = False
 _last_update_id = 0
+_whisper_model = None
 
 def _load_config():
     """Carica config.json per le impostazioni Telegram."""
@@ -29,6 +30,76 @@ def _get_agent():
         cfg = load_config()
         _agent_instance = JarvisAgent(cfg)
     return _agent_instance
+
+def _download_telegram_file(file_id):
+    """Scarica un file da Telegram dato il file_id, restituisce bytes."""
+    import requests as _req
+    base_url = f"https://api.telegram.org/bot{BOT_TOKEN}"
+    try:
+        resp = _req.get(f"{base_url}/getFile", params={"file_id": file_id}, timeout=10)
+        data = resp.json()
+        if not data.get("ok"):
+            logging.error(f"Telegram: getFile fallito: {data.get('description', '?')}")
+            return None
+        file_path = data["result"]["file_path"]
+        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+        resp = _req.get(file_url, timeout=30)
+        return resp.content
+    except Exception as e:
+        logging.error(f"Telegram: download file error: {e}")
+        return None
+
+def _transcribe_audio(audio_bytes, ext=".ogg"):
+    """Trascrive audio tramite Whisper, restituisce testo."""
+    global _whisper_model
+    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    tmp.write(audio_bytes)
+    audio_path = tmp.name
+    tmp.close()
+    try:
+        from faster_whisper import WhisperModel
+        global _whisper_model
+        if _whisper_model is None:
+            _whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+        segs, _ = _whisper_model.transcribe(audio_path, language="it", beam_size=1)
+        return " ".join(s.text.strip() for s in segs).strip()
+    except Exception as e:
+        logging.error(f"Telegram: trascrizione fallita: {e}")
+        return ""
+    finally:
+        try:
+            os.unlink(audio_path)
+        except:
+            pass
+
+def _send_voice_reply(chat_id, text):
+    """Genera TTS audio e lo invia come messaggio audio su Telegram."""
+    import requests as _req
+    base_url = f"https://api.telegram.org/bot{BOT_TOKEN}"
+    try:
+        import edge_tts as etts
+        tts = etts.Communicate(text[:500], voice="it-IT-ElsaNeural")
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            tmp.close()
+            tts.save(tmp.name)
+        with open(tmp.name, "rb") as f:
+            audio_data = f.read()
+        os.unlink(tmp.name)
+        resp = _req.post(
+            f"{base_url}/sendAudio",
+            data={"chat_id": chat_id},
+            files={"audio": ("reply.mp3", audio_data, "audio/mpeg")},
+            timeout=30
+        )
+        result = resp.json()
+        if result.get("ok"):
+            logging.info(f"Telegram: audio inviato a chat {chat_id}")
+            return True
+        logging.error(f"Telegram: sendAudio fallito: {result.get('description', '?')}")
+        return False
+    except Exception as e:
+        logging.error(f"Telegram: TTS reply error: {e}")
+        return False
 
 def _poll():
     """Polling loop per messaggi Telegram (eseguito in thread separato)."""
@@ -65,6 +136,21 @@ def _poll():
                 msg = update["message"]
                 chat_id = msg.get("chat", {}).get("id")
                 text = msg.get("text", "").strip()
+                is_voice = False
+                
+                # ── Rilevamento messaggi vocali ──
+                voice_info = msg.get("voice") or msg.get("audio")
+                if voice_info:
+                    file_id = voice_info.get("file_id")
+                    if file_id:
+                        audio_bytes = _download_telegram_file(file_id)
+                        if audio_bytes:
+                            ext = ".oga" if msg.get("voice") else ".mp3"
+                            transcribed = _transcribe_audio(audio_bytes, ext)
+                            if transcribed:
+                                text = transcribed
+                                is_voice = True
+                                logging.info(f"Telegram: vocale trascritto: {text[:100]}")
                 
                 # Filtra chat non autorizzate
                 if ALLOWED_CHAT_IDS and chat_id not in ALLOWED_CHAT_IDS:
@@ -83,16 +169,25 @@ def _poll():
                     if not reply:
                         reply = "✅ Fatto."
                     
-                    # Invia risposta (split se > 4096 chars)
-                    if len(reply) > 4000:
-                        for i in range(0, len(reply), 4000):
+                    if is_voice:
+                        # Risposta audio per messaggi vocali
+                        audio_ok = _send_voice_reply(chat_id, reply)
+                        if not audio_ok:
+                            # Fallback a testo se TTS fallisce
                             _req.post(f"{base_url}/sendMessage", json={
-                                "chat_id": chat_id, "text": reply[i:i+4000]
+                                "chat_id": chat_id, "text": reply
                             }, timeout=10)
                     else:
-                        _req.post(f"{base_url}/sendMessage", json={
-                            "chat_id": chat_id, "text": reply
-                        }, timeout=10)
+                        # Risposta testo (split se > 4096 chars)
+                        if len(reply) > 4000:
+                            for i in range(0, len(reply), 4000):
+                                _req.post(f"{base_url}/sendMessage", json={
+                                    "chat_id": chat_id, "text": reply[i:i+4000]
+                                }, timeout=10)
+                        else:
+                            _req.post(f"{base_url}/sendMessage", json={
+                                "chat_id": chat_id, "text": reply
+                            }, timeout=10)
                 except Exception as e:
                     logging.error(f"Telegram: errore elaborazione: {e}")
                     try:
