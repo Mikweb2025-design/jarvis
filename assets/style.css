@@ -494,6 +494,13 @@ html.theme-crystal #holo-canvas{opacity:0.55}
 #rag-add-file:focus{border-color:var(--cy2)}
 #rag-add-wrap button{font-family:var(--fd);font-size:8px;padding:5px 8px;border:1px solid var(--cy2);background:rgba(0,240,255,0.1);color:var(--cy);border-radius:2px;cursor:pointer;letter-spacing:0.1em}
 #rag-add-wrap button:hover{background:rgba(0,240,255,0.25)}
+/* RAG progress bar */
+#rag-progress-wrap{padding:6px 8px;border-bottom:1px solid var(--n3)}
+#rag-progress-bar{height:4px;background:var(--n3);border-radius:2px;overflow:hidden}
+#rag-progress-fill{height:100%;width:0%;background:var(--cy);transition:width 0.3s ease;border-radius:2px}
+#rag-progress-fill.active{animation:rag-pulse 1.2s ease-in-out infinite}
+@keyframes rag-pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+#rag-progress-label{font-family:var(--fm);font-size:7px;color:var(--tx3);margin-top:4px;text-align:center}
 
 #trends-panel{position:fixed;top:50px;right:10px;width:480px;max-height:85vh;background:rgba(10,10,18,0.97);border:1px solid var(--am2);border-radius:4px;display:none;z-index:1000;overflow:hidden;flex-direction:column;box-shadow:0 0 30px rgba(255,170,0,0.15);backdrop-filter:blur(16px)}
 #trends-panel.open{display:flex}
@@ -823,18 +830,26 @@ html.theme-crystal #holo-canvas{opacity:0.55}
   #boot .boot-glitch{font-size:28px}
   #boot .boot-sub{font-size:9px}
 
+  /* Mobile page navigation links */
+  .mob-page-link:active{background:rgba(0,240,255,0.08)}
+  .mob-page-link.active{color:var(--lv) !important;border-left:2px solid var(--lv) !important}
+
   /* Fix iOS input zoom */
   @supports (-webkit-touch-callout:none){
     #irow #minput{font-size:16px !important}
   }
 }
 
-/* ── WORLD NEWS PANEL ── */
-#worldnews-panel{position:fixed;top:0;left:0;right:0;bottom:0;z-index:900;display:none;flex-direction:column;background:#0a0a12}
+/* ── WORLD NEWS GLOBE v4.0 ── */
+#worldnews-panel{position:fixed;top:0;left:0;right:0;bottom:0;z-index:900;display:none;flex-direction:column;background:#08080f}
 #worldnews-panel.open{display:flex}
-#worldnews-panel .wn-card{padding:10px 12px;margin-bottom:6px;background:#12121e;border:1px solid #1e1e30;border-radius:6px;transition:all .15s}
-#worldnews-panel .wn-card:hover{background:#1a1a2a;border-color:#2a2a4e}
-.wn-tooltip{background:#161625!important;border:1px solid #2a2a4e!important;color:#ddd!important;font:12px/1.3 'Rajdhani',monospace!important;border-radius:6px!important;padding:6px 10px!important;max-width:260px!important}
-.wn-tooltip::before{border-top-color:#2a2a4e!important}
+#worldnews-panel .wn-card{padding:9px 12px;margin-bottom:4px;background:#12121e;border:1px solid #1e1e30;border-left:2px solid transparent;border-radius:6px;transition:all .2s cubic-bezier(0.175,0.885,0.32,1.275)}
+#worldnews-panel .wn-card:hover{background:#1a1a2a;border-color:#2a2a4e;border-left-color:#00f0ff;transform:translateX(3px)}
 #wn-detail{display:none}
 #wn-detail:not(.hidden){display:flex}
+#wn-detail-card{animation:wnSlideIn .35s cubic-bezier(0.175,0.885,0.32,1.275) both}
+@keyframes wnSlideIn{0%{opacity:0;transform:translateY(30px) scale(0.96)}100%{opacity:1;transform:translateY(0) scale(1)}}
+#wn-map canvas{display:block;width:100%!important;height:100%!important}
+#worldnews-panel ::-webkit-scrollbar{width:4px}
+#worldnews-panel ::-webkit-scrollbar-track{background:#08080f}
+#worldnews-panel ::-webkit-scrollbar-thumb{background:#2a2a3e;border-radius:2px}
