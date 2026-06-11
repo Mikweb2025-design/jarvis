@@ -163,6 +163,9 @@ TOOLS_SCHEMA = [
     {"type":"function","function":{"name":"files_info","description":"Info file","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
     {"type":"function","function":{"name":"files_organize","description":"Organizza Downloads","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"files_delete","description":"Elimina file","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
+    {"type":"function","function":{"name":"files_copy","description":"Copia file","parameters":{"type":"object","properties":{"src":{"type":"string"},"dst":{"type":"string"}},"required":["src","dst"]}}},
+    {"type":"function","function":{"name":"files_move","description":"Sposta/rinomina file","parameters":{"type":"object","properties":{"src":{"type":"string"},"dst":{"type":"string"}},"required":["src","dst"]}}},
+    {"type":"function","function":{"name":"files_rename","description":"Rinomina file","parameters":{"type":"object","properties":{"path":{"type":"string"},"new_name":{"type":"string"}},"required":["path","new_name"]}}},
     # Memory
     {"type":"function","function":{"name":"memory_remember","description":"Ricorda un fatto","parameters":{"type":"object","properties":{"content":{"type":"string"},"category":{"type":"string","default":"fact"},"tags":{"type":"string","default":""}},"required":["content"]}}},
     {"type":"function","function":{"name":"memory_search","description":"Cerca nei ricordi","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}},
@@ -392,7 +395,7 @@ TOOLS_SCHEMA = [
     {"type":"function","function":{"name":"whatsapp_send","description":"Invia un messaggio WhatsApp a un contatto o numero. Usa OpenWA (gateway self-hosted).","parameters":{"type":"object","properties":{"to":{"type":"string","description":"Numero o contatto WhatsApp (es. 393401234567 o 'Mario Rossi')"},"text":{"type":"string","description":"Testo del messaggio"}},"required":["to","text"]}}},
     {"type":"function","function":{"name":"whatsapp_status","description":"Stato della connessione WhatsApp: sessione attiva, OpenWA raggiungibile","parameters":{"type":"object","properties":{}}}},
     {"type":"function","function":{"name":"whatsapp_ensure","description":"Attiva/crea la sessione WhatsApp e mostra QR code se non ancora connessa","parameters":{"type":"object","properties":{}}}},
-    {"type":"function","function":{"name":"whatsapp_send_image","description":"Invia un'immagine via WhatsApp da un URL pubblico.","parameters":{"type":"object","properties":{"to":{"type":"string","description":"Numero o gruppo WhatsApp"},"url":{"type":"string","description":"URL pubblico dell'immagine"},"caption":{"type":"string","description":"Didascalia opzionale","default":""}},"required":["to","url"]}}},
+    {"type":"function","function":{"name":"whatsapp_send_image","description":"Invia un'immagine via WhatsApp. Usa l'URL ottenuto da image_generate (anche URL locale /api/image?file=... funziona, viene convertito in base64).","parameters":{"type":"object","properties":{"to":{"type":"string","description":"Numero o gruppo WhatsApp (es. 120363407071302556@g.us per gruppo Jarvis)"},"url":{"type":"string","description":"URL dell'immagine (anche locale /api/image?file=...)"},"caption":{"type":"string","description":"Didascalia opzionale","default":""}},"required":["to","url"]}}},
     {"type":"function","function":{"name":"whatsapp_send_file","description":"Invia un file/documento via WhatsApp da un URL pubblico.","parameters":{"type":"object","properties":{"to":{"type":"string","description":"Numero o gruppo WhatsApp"},"url":{"type":"string","description":"URL pubblico del file"},"filename":{"type":"string","description":"Nome del file","default":""},"caption":{"type":"string","description":"Didascalia opzionale","default":""}},"required":["to","url"]}}},
     # ── Knowledge Graph v12.0 (GitNexus) ──
     {"type":"function","function":{"name":"kg_analyze","description":"Analizza la struttura del repository: file, linguaggi, statistiche. Usa GitNexus se disponibile, altrimenti fallback file tree.","parameters":{"type":"object","properties":{"path":{"type":"string","description":"Percorso del repository (default: repo corrente)","default":""}}}}},
@@ -595,6 +598,9 @@ def files_search(query="", path="~", **_): return search_files(query, path)
 def files_info(path="", **_): return get_file_info(path)
 def files_organize(**_): return organize_downloads()
 def files_delete(path="", **_): return delete_file(path)
+def files_copy(src="", dst="", **_): return copy_file(src, dst)
+def files_move(src="", dst="", **_): return move_file(src, dst)
+def files_rename(path="", new_name="", **_): return rename_file(path, new_name)
 
 # ── MEMORY ──
 def memory_remember(content="", category="fact", tags="", **_):
@@ -966,7 +972,9 @@ def evolution_generate_skill(name="", description="", **_):
 
 # ── VISION ENGINE v11.0 ──
 def vision_analyze_tool(image_path="", **_):
-    try: return json.dumps(vision.analyze_screenshot(image_path if image_path else None), indent=2, ensure_ascii=False) if isinstance(vision.analyze_screenshot(image_path if image_path else None), dict) else str(vision.analyze_screenshot(image_path if image_path else None))
+    try:
+        result = vision.analyze_screenshot(image_path or None)
+        return json.dumps(result, indent=2, ensure_ascii=False) if isinstance(result, dict) else str(result)
     except Exception as e: return f"⚠ Vision: {e}"
 
 def vision_read_text_tool(image_path="", **_):
@@ -1499,8 +1507,47 @@ Esempio: [{"type":"title","title":"Titolo","subtitle":"Sottotitolo"},{"type":"co
         return f"⚠ auto_presentation: {e}"
 # ── IMAGE GENERATION v12.0 ──
 def image_generate_tool(prompt="", model="black-forest-labs/FLUX.1-schnell", size="1024x1024", n=1, **_):
-    try: return _generate_image(prompt, model, size, n)
-    except Exception as e: return f"⚠ Image gen: {e}"
+    try:
+        if not prompt or not prompt.strip():
+            return "⚠ Prompt vuoto! Devi specificare cosa generare. Rileggi la richiesta dell'utente ed estrai SOLO il soggetto visivo."
+        # Pulizia prompt: rimuove il framing della richiesta WhatsApp
+        import re as _re
+        _clean = prompt.strip()
+        _framing = [
+            r'(?i)^mandami\s+(una\s+)?foto\s+(di|con)\s+',
+            r'(?i)^mandaci\s+(una\s+)?foto\s+(di|con)\s+',
+            r'(?i)^manda\s+(una\s+)?foto\s+(di|con)\s+',
+            r'(?i)^inviaci\s+(una\s+)?foto\s+(di|con)\s+',
+            r'(?i)^invia\s+(una\s+)?foto\s+(di|con)\s+',
+            r'(?i)^fammi\s+(vedere|una|un\s+)?foto\s+(di|con)\s+',
+            r'(?i)^mostrami\s+(una\s+)?foto\s+(di|con)\s+',
+            r'(?i)^genera\s+(una\s+)?immagine\s+(di|con)\s+',
+            r'(?i)^crea\s+(una\s+)?immagine\s+(di|con)\s+',
+            r'(?i)^cerco\s+(una\s+)?foto\s+(di|con)\s+',
+            r'(?i)^vorrei\s+(una\s+)?foto\s+(di|con)\s+',
+            r'(?i)\s*(sul\s+)?gruppo\s+whatsapp.*$',
+            r'(?i)\s*(su|nel|sul|sull[oaie])\s+gruppo\s+\w+.*$',
+            r'(?i)\s*(per|via)\s+(whatsapp|whats?ap).*$',
+            r'(?i)^per\s+favore[\s,]+',
+            r'(?i)^grazie[\s,!]+',
+        ]
+        for _pat in _framing:
+            _clean = _re.sub(_pat, '', _clean).strip()
+        # Se la pulizia ha rimosso tutto, usa il prompt originale
+        _prompt_used = _clean if _clean else prompt
+
+        print(f"  [ImageGen] prompt originale: {prompt!r}")
+        print(f"  [ImageGen] prompt pulito:   {_prompt_used!r}")
+
+        res = _generate_image(_prompt_used, model, size, n)
+        if isinstance(res, dict) and "images" in res and res["images"]:
+            url = res["images"][0].get("url", "")
+            _revised = res.get("revised_prompt", "")
+            _detail = f" | revised: {_revised[:80]}" if _revised and _revised != _prompt_used else ""
+            return f"✅ Immagine generata! URL={url} — prompt: {_prompt_used[:120]}{_detail}"
+        return str(res)[:300]
+    except Exception as e:
+        return f"⚠ Image gen: {e}"
 
 def image_list_models_tool(**_):
     try: return _list_image_models()
@@ -1526,7 +1573,11 @@ def whatsapp_send_tool(to="", text="", **_):
     try:
         if not to or not text:
             return "⚠ Specifica destinatario (numero o contatto) e testo"
-        return _wa_send_msg(to, text)
+        res = _wa_send_msg(to, text)
+        if isinstance(res, dict) and res.get("ok"):
+            return f"✅ Messaggio inviato con successo a {to}"
+        err = res.get("error") or str(res.get("data", {}))[:200]
+        return f"⚠ Invio messaggio fallito: {err}"
     except Exception as e:
         return f"⚠ WA send: {e}"
 
@@ -1553,7 +1604,12 @@ def whatsapp_send_image_tool(to="", url="", caption="", **_):
     if not to or not url:
         return "⚠ Specifica destinatario e URL dell'immagine"
     try:
-        return _wa_send_img(to, url, caption)
+        res = _wa_send_img(to, url, caption)
+        if isinstance(res, dict) and res.get("ok"):
+            mid = res.get("data", {}).get("messageId", "")
+            return f"✅ OK: immagine già inviata a {to}. NON chiamare di nuovo questo tool. messageId={mid[:30]}"
+        err = res.get("error") or str(res.get("data", {}))[:200]
+        return f"⚠ Invio immagine fallito: {err}"
     except Exception as e:
         return f"⚠ WA send image: {e}"
 
@@ -1609,6 +1665,9 @@ HANDLERS = {
     "files_list":files_list,"files_read":files_read,"files_create":files_create,
     "files_search":files_search,"files_info":files_info,"files_organize":files_organize,
     "files_delete":files_delete,
+    "files_copy":files_copy,
+    "files_move":files_move,
+    "files_rename":files_rename,
     "memory_remember":memory_remember,"memory_search":memory_search,
     "memory_preferences":memory_preferences,"memory_stats":memory_stats,
     "shortcuts_run":shortcuts_run,"shortcuts_list":shortcuts_list,

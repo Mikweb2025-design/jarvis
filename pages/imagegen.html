@@ -1,0 +1,70 @@
+<div class="panel-header">
+    <h3>🎨 IMAGE GENERATION</h3>
+    <span id="img-gen-status" style="font-size:9px;font-family:var(--fm);color:var(--tx3)">IONOS Hub</span>
+    <button onclick="closeImageGen()">✕</button>
+  </div>
+  <div id="img-gen-toolbar" style="padding:6px 12px;display:flex;gap:6px;border-bottom:1px solid var(--n3);flex-wrap:wrap">
+    <input id="img-gen-prompt" placeholder="descrivi l'immagine da generare..." style="flex:3;min-width:200px;background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 8px;font-size:10px;border-radius:3px">
+    <select id="img-gen-model" style="background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 6px;font-size:9px;border-radius:3px">
+      <option value="black-forest-labs/FLUX.1-schnell">FLUX.1 Schnell</option>
+      <option value="black-forest-labs/FLUX.1-dev">FLUX.1 Dev</option>
+      <option value="stabilityai/stable-diffusion-3.5-large">SD 3.5 Large</option>
+    </select>
+    <select id="img-gen-size" style="background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 6px;font-size:9px;border-radius:3px">
+      <option value="1024x1024">1024×1024</option>
+      <option value="1024x1792">1024×1792</option>
+      <option value="1792x1024">1792×1024</option>
+    </select>
+    <button id="img-gen-btn" onclick="imgGenGenerate()" style="background:var(--cy2);color:#000;border:none;padding:4px 12px;border-radius:3px;font-size:9px;cursor:pointer;font-weight:bold">✨ GENERA</button>
+  </div>
+  <div id="img-gen-content" style="padding:8px;overflow-y:auto;max-height:calc(85vh - 90px)">
+    <div id="img-gen-gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px"></div>
+    <div id="img-gen-prompt-display" style="padding:6px 8px;background:rgba(255,255,255,0.02);border:1px solid var(--n3);border-radius:4px;font-size:9px;font-family:var(--fm);color:var(--tx2);margin-top:6px;display:none"></div>
+  </div>
+<style>
+#imagegen-panel{position:fixed;top:120px;right:10px;width:640px;max-height:85vh;background:rgba(10,10,18,0.97);border:1px solid var(--pp);border-radius:4px;display:none;z-index:1010;overflow:hidden;box-shadow:0 0 30px rgba(170,0,255,0.3);backdrop-filter:blur(16px)}
+#imagegen-panel.open{display:flex;flex-direction:column}
+#img-gen-content{flex:1;overflow:hidden}
+#img-gen-gallery .img-card{border:1px solid var(--n3);border-radius:4px;overflow:hidden;background:rgba(255,255,255,0.02);transition:all 0.2s}
+#img-gen-gallery .img-card:hover{border-color:var(--pp);box-shadow:0 0 10px rgba(170,0,255,0.2)}
+#img-gen-gallery .img-card img{width:100%;display:block}
+#img-gen-gallery .img-card .img-info{padding:6px 8px;font-size:8px;color:var(--tx3);font-family:var(--fm)}
+</style>
+<script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+var IMG_GEN_LOADING = false;
+function closeImageGen() { document.getElementById('imagegen-panel')?.classList.remove('open'); }
+window.closeImageGen = closeImageGen;
+async function imgGenGenerate() {
+  if (IMG_GEN_LOADING) return;
+  var prompt = document.getElementById('img-gen-prompt').value.trim();
+  if (!prompt) { sysmsg('⚠ Inserisci un prompt'); return; }
+  IMG_GEN_LOADING = true;
+  document.getElementById('img-gen-btn').textContent = '⏳ GENERANDO...';
+  document.getElementById('img-gen-btn').style.opacity = '0.6';
+  try {
+    var model = document.getElementById('img-gen-model').value;
+    var size = document.getElementById('img-gen-size').value;
+    var r = await fetch('/api/imagegen/generate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({prompt:prompt, model:model, size:size, n:1})
+    });
+    var d = await r.json();
+    if (d.error) { sysmsg('⚠ ' + d.error); return; }
+    var gallery = document.getElementById('img-gen-gallery');
+    document.getElementById('img-gen-prompt-display').style.display = 'block';
+    document.getElementById('img-gen-prompt-display').innerHTML = '<span style="color:var(--pp)">✦ PROMPT:</span> <span style="color:var(--tx2)">' + esc(d.revised_prompt || prompt) + '</span><br><span style="color:var(--tx3)">⏱ ' + d.elapsed + 's &mdash; ' + d.model + '</span>';
+    if (d.images && d.images.length > 0) {
+      gallery.innerHTML = d.images.map(function(img) {
+        var url = esc(img.url || '');
+        var name = esc(img.filename || 'image');
+        return '<div class="img-card"><a href="'+url+'" target="_blank" rel="noopener"><img src="'+url+'" loading="lazy"></a><div class="img-info">' + name + '</div></div>';
+      }).join('');
+    }
+    sysmsg('✅ Immagine generata in ' + d.elapsed + 's');
+  } catch(e) { sysmsg('⚠ Errore: ' + e.message); }
+  IMG_GEN_LOADING = false;
+  document.getElementById('img-gen-btn').textContent = '✨ GENERA';
+  document.getElementById('img-gen-btn').style.opacity = '1';
+}
+</script>

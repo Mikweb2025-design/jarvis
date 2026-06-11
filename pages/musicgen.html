@@ -1,0 +1,83 @@
+<div class="panel-header">
+    <h3>🎵 MUSIC GENERATION</h3>
+    <span id="music-gen-status" style="font-size:9px;font-family:var(--fm);color:var(--tx3)">ACE-Step 1.5</span>
+    <button onclick="closeMusicGen()">✕</button>
+  </div>
+  <div id="music-gen-toolbar" style="padding:6px 12px;display:flex;gap:6px;border-bottom:1px solid var(--n3);flex-wrap:wrap">
+    <input id="music-gen-prompt" placeholder="descrivi la musica..." style="flex:3;min-width:200px;background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 8px;font-size:10px;border-radius:3px">
+    <select id="music-gen-genre" style="background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 6px;font-size:9px;border-radius:3px">
+      <option value="electronic">⚡ Electronic</option>
+      <option value="ambient">🌀 Ambient</option>
+      <option value="cinematic">🎬 Cinematic</option>
+      <option value="lo-fi">☕ Lo-Fi</option>
+      <option value="synthwave">🌴 Synthwave</option>
+      <option value="jazz">🎷 Jazz</option>
+      <option value="classical">🎻 Classical</option>
+    </select>
+    <select id="music-gen-duration" style="background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 6px;font-size:9px;border-radius:3px">
+      <option value="15">15s</option>
+      <option value="30" selected>30s</option>
+      <option value="60">60s</option>
+      <option value="120">120s</option>
+    </select>
+    <button id="music-gen-btn" onclick="musicGenGenerate()" style="background:var(--pp);color:#fff;border:none;padding:4px 12px;border-radius:3px;font-size:9px;cursor:pointer;font-weight:bold">🎹 GENERA</button>
+  </div>
+  <div id="music-gen-content" style="padding:8px;overflow-y:auto;max-height:calc(85vh - 90px)">
+    <div id="music-gen-player" style="display:none;padding:10px;background:rgba(255,255,255,0.02);border:1px solid var(--n3);border-radius:4px;margin-bottom:8px">
+      <div style="font-size:9px;color:var(--tx3);margin-bottom:6px" id="music-gen-info">🎵 Traccia generata</div>
+      <audio id="music-gen-audio" controls style="width:100%;height:32px"></audio>
+      <div id="music-gen-details" style="font-size:8px;color:var(--tx3);margin-top:4px;font-family:var(--fm)"></div>
+    </div>
+    <div id="music-gen-status-msg" style="padding:6px 8px;background:rgba(255,255,255,0.02);border:1px solid var(--n3);border-radius:4px;font-size:9px;font-family:var(--fm);color:var(--tx2)">✨ Scegli genere e prompt, poi clicca GENERA</div>
+  </div>
+<style>
+#musicgen-panel{position:fixed;top:50px;right:10px;width:480px;max-height:85vh;background:rgba(10,10,18,0.97);border:1px solid var(--pp);border-radius:4px;display:none;z-index:1010;overflow:hidden;box-shadow:0 0 30px rgba(170,0,255,0.3);backdrop-filter:blur(16px)}
+#musicgen-panel.open{display:flex;flex-direction:column}
+#music-gen-content{flex:1;overflow:hidden}
+#music-gen-audio::-webkit-media-controls-panel{background:rgba(10,10,18,0.95)}
+</style>
+<script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+var MUSIC_GEN_LOADING = false;
+function closeMusicGen() { document.getElementById('musicgen-panel')?.classList.remove('open'); }
+window.closeMusicGen = closeMusicGen;
+function openMusicGen(){ document.getElementById('musicgen-panel')?.classList.add('open'); }
+window.openMusicGen = openMusicGen;
+async function musicGenGenerate() {
+  if (MUSIC_GEN_LOADING) return;
+  var prompt = document.getElementById('music-gen-prompt').value.trim();
+  if(!prompt){ sysmsg('⚠ Inserisci una descrizione'); return; }
+  var genre = document.getElementById('music-gen-genre').value;
+  var duration = parseInt(document.getElementById('music-gen-duration').value);
+  MUSIC_GEN_LOADING = true;
+  document.getElementById('music-gen-btn').textContent = '⏳ GENERANDO...';
+  document.getElementById('music-gen-btn').style.opacity = '0.6';
+  document.getElementById('music-gen-status-msg').textContent = '⏳ Generazione in corso... (~'+duration+'s)';
+  document.getElementById('music-gen-player').style.display = 'none';
+  try {
+    var r = await fetch('/api/musicgen/generate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({prompt:prompt, genre:genre, duration:duration, temperature:1.0})
+    });
+    var d = await r.json();
+    if (d.error) { sysmsg('⚠ '+d.error); document.getElementById('music-gen-status-msg').textContent = '⚠ '+d.error; return; }
+    var player = document.getElementById('music-gen-player');
+    var audio = document.getElementById('music-gen-audio');
+    if (d.file && (d.file.startsWith('http:') || d.file.startsWith('https:') || d.file.startsWith('blob:') || d.file.startsWith('/'))) {
+      player.style.display = 'block';
+      audio.src = d.file;
+      audio.load();
+      audio.play().catch(function(){});
+      document.getElementById('music-gen-info').textContent = '🎵 '+genre.toUpperCase()+' — '+d.duration+'s';
+      document.getElementById('music-gen-details').textContent = '⏱ '+(d.elapsed||'--')+'s | '+(d.sample_rate||'--')+' Hz';
+      document.getElementById('music-gen-status-msg').style.display = 'none';
+      sysmsg('🎵 Musica generata: '+genre+' '+d.duration+'s');
+    } else {
+      document.getElementById('music-gen-status-msg').textContent = '⚠ Errore: file non valido';
+    }
+  } catch(e) { sysmsg('⚠ Errore: '+e.message); }
+  MUSIC_GEN_LOADING = false;
+  document.getElementById('music-gen-btn').textContent = '🎹 GENERA';
+  document.getElementById('music-gen-btn').style.opacity = '1';
+}
+</script>

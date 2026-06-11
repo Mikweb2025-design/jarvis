@@ -9,13 +9,18 @@ from typing import Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Query, Body
-from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+# ── Constants ──
+VOICE_MAP = {"vivian": "it-IT-ElsaNeural", "serena": "it-IT-ElsaNeural",
+             "aiden": "it-IT-DiegoNeural", "ryan": "de-DE-KatjaNeural",
+             "eric": "de-DE-ConradNeural", "dylan": "de-DE-ConradNeural"}
 
 logger = logging.getLogger("jarvis_fastapi")
 if not logger.handlers:
@@ -333,7 +338,7 @@ class WhatsAppSendRequest(BaseModel):
 
 class WhatsAppSendImageRequest(BaseModel):
     to: str
-    image_url: str
+    url: str
     caption: Optional[str] = None
 
 class RAGUpdate(BaseModel):
@@ -434,11 +439,15 @@ def _tts_worker():
                 data = f.read()
             os.unlink(output_path)
             with _tts_lock:
+                done = _tts_result[task_id].pop("done", None)
                 _tts_result[task_id] = {"data": data, "content_type": "audio/wav", "error": None}
         except Exception as e:
             print(f"  [TTS Qwen3 Worker] fallito: {e}")
             with _tts_lock:
+                done = _tts_result[task_id].pop("done", None)
                 _tts_result[task_id] = {"data": None, "content_type": None, "error": str(e)}
+        if done:
+            done.set()
         _tts_event.clear()
 
 def load_qwen3_model_safe():
@@ -464,12 +473,12 @@ def _qwen3_generate(text, voice="vivian", language="italian"):
         lang = language or "Italian"
         inst = "Clear, professional tone"
     task_id = f"task_{time.time()}_{id(threading.current_thread())}"
+    done = threading.Event()
     with _tts_lock:
         _tts_queue = task_id
-        _tts_result[task_id] = {"task": {"text": text, "speaker": spk, "language": lang, "instruct": inst}}
+        _tts_result[task_id] = {"task": {"text": text, "speaker": spk, "language": lang, "instruct": inst}, "done": done}
     _tts_event.set()
-    for _ in range(200):
-        time.sleep(0.1)
+    if done.wait(timeout=20):
         with _tts_lock:
             result = _tts_result.get(task_id)
         if result and "data" in result:
@@ -497,10 +506,7 @@ def _generate_tts_chunk(text, voice="vivian", language="italian", speed=1.0):
         print(f"  [TTS Qwen3] fallito: {e}")
         try:
             import asyncio, edge_tts
-            voice_map = {"vivian": "it-IT-ElsaNeural", "serena": "it-IT-ElsaNeural",
-                         "aiden": "it-IT-DiegoNeural", "ryan": "de-DE-KatjaNeural",
-                         "eric": "de-DE-ConradNeural", "dylan": "de-DE-ConradNeural"}
-            tts_voice = voice_map.get(voice, "it-IT-ElsaNeural")
+            tts_voice = VOICE_MAP.get(voice, "it-IT-ElsaNeural")
             rate = f"+{int((speed-1)*100)}%"
             async def _gen():
                 comm = edge_tts.Communicate(clean, tts_voice, rate=rate)
@@ -618,8 +624,13 @@ def _run(cmd, timeout=5):
 _sysinfo_cache = {"data": None, "time": 0}
 _sysinfo_lock = threading.Lock()
 
+_sysinfo_brief_cache = {"data": None, "time": 0}
+
 def sysinfo():
-    return {
+    now = time.time()
+    if _sysinfo_brief_cache["data"] and (now - _sysinfo_brief_cache["time"]) < 5:
+        return _sysinfo_brief_cache["data"]
+    r = {
         "battery": _run("pmset -g batt | grep -o '[0-9]*%' | head -1", 3) or "N/A",
         "cpu":     _run("top -l 1 -n 0 | grep 'CPU usage' | awk '{print $3}'", 3) or "N/A",
         "ram":     _run("memory_pressure | grep 'System-wide memory free percentage'", 3) or "N/A",
@@ -629,6 +640,9 @@ def sysinfo():
         "hostname":_run("hostname", 3) or "N/A",
         "model":   _run("sysctl -n hw.model", 3) or "N/A",
     }
+    _sysinfo_brief_cache["data"] = r
+    _sysinfo_brief_cache["time"] = now
+    return r
 
 def sysinfo_detailed():
     now = time.time()
@@ -800,10 +814,7 @@ async def api_chat_voice(body: ChatVoiceRequest):
                 if speech:
                     try:
                         import asyncio, edge_tts, tempfile
-                        voice_map = {"vivian": "it-IT-ElsaNeural", "serena": "it-IT-ElsaNeural",
-                                     "aiden": "it-IT-DiegoNeural", "ryan": "de-DE-KatjaNeural",
-                                     "eric": "de-DE-ConradNeural", "dylan": "de-DE-ConradNeural"}
-                        tts_v = voice_map.get(body.voice, "it-IT-ElsaNeural")
+                        tts_v = VOICE_MAP.get(body.voice, "it-IT-ElsaNeural")
                         async def _qk():
                             comm = edge_tts.Communicate(speech, tts_v)
                             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
@@ -830,10 +841,7 @@ async def api_chat_voice(body: ChatVoiceRequest):
 
             if reply and not reply.startswith("[Errore"):
                 import asyncio, edge_tts, tempfile
-                voice_map = {"vivian": "it-IT-ElsaNeural", "serena": "it-IT-ElsaNeural",
-                             "aiden": "it-IT-DiegoNeural", "ryan": "de-DE-KatjaNeural",
-                             "eric": "de-DE-ConradNeural", "dylan": "de-DE-ConradNeural"}
-                tts_voice = voice_map.get(body.voice, "it-IT-ElsaNeural")
+                tts_voice = VOICE_MAP.get(body.voice, "it-IT-ElsaNeural")
                 rate = f"+{int((body.speed-1)*100)}%"
                 try:
                     comm = edge_tts.Communicate(reply[:500], tts_voice, rate=rate)
@@ -2026,7 +2034,10 @@ async def api_whatsapp_status():
 
 @app.post("/api/whatsapp/ensure")
 async def api_whatsapp_ensure():
-    return _wa_ensure()
+    result = _wa_ensure()
+    if result.get("status") == "ready":
+        _ensure_wa_webhook()
+    return result
 
 @app.post("/api/whatsapp/send")
 async def api_whatsapp_send(body: WhatsAppSendRequest):
@@ -2040,7 +2051,13 @@ async def api_whatsapp_send(body: WhatsAppSendRequest):
 
 @app.post("/api/whatsapp/send-image")
 async def api_whatsapp_send_image(body: WhatsAppSendImageRequest):
-    return _wa_send_img(body.to, body.image_url, body.caption or "")
+    global _wa_recent_ids
+    result = _wa_send_img(body.to, body.url, body.caption or "")
+    if isinstance(result, dict) and result.get("ok") and isinstance(result.get("data"), dict):
+        sent_id = result["data"].get("messageId")
+        if sent_id:
+            _wa_recent_ids[sent_id] = time.time()
+    return result
 
 _wa_recent_ids: dict[str, float] = {}  # msg_id -> timestamp, per evitare loop
 
@@ -2048,7 +2065,9 @@ def _process_wa_message(chat_id: str, msg_text: str, is_voice: bool = False):
     """Processa messaggio WhatsApp in background (thread separato)"""
     global _wa_recent_ids
     try:
-        reply = agent.chat(msg_text)
+        # Diamo contesto WhatsApp all'agente così sa di dover usare i tool WhatsApp
+        wa_context = f"[WhatsApp - Gruppo Jarvis] {msg_text}"
+        reply = agent.chat(wa_context)
         if isinstance(reply, tuple):
             reply = reply[0]
         reply_text = f"🤖 {reply.strip()}" if isinstance(reply, str) else f"🤖 {str(reply)}"
@@ -2132,18 +2151,21 @@ async def api_whatsapp_webhook(body: dict):
             sender_name = chat_id.split("@")[0]
             logger.info(f"[WA] msg_id={msg_id[:30]} chat={chat_id} from_me={from_me} is_group={is_group} text='{msg_text[:50]}'")
 
-            # Dedup: salta messaggi inviati da noi (rilevati via API, match per prefisso)
+            # Dedup: salta messaggi inviati da noi (exact match su waMessageId)
             now = time.time()
             _wa_recent_ids = {k: v for k, v in _wa_recent_ids.items() if now - v < 30}
-            _dedup_found = any(msg_id.startswith(k[:30]) or k.startswith(msg_id) for k in _wa_recent_ids)
-            if msg_id in _wa_recent_ids or _dedup_found:
+            if msg_id in _wa_recent_ids:
                 logger.info(f"[WA] Dedup: {msg_id[:30]} saltato")
                 return {"ok": True, "action": "dedup"}
 
-            # Salta messaggi di testo del bot fuori dal gruppo
-            if from_me and chat_id != jarvis_group_id:
+            # Salta messaggi inviati dal bot che contengono media (immagini/audio/video)
+            if from_me:
                 media = data.get("media")
-                if not (media and isinstance(media, dict) and media.get("data")):
+                if media and isinstance(media, dict) and media.get("data"):
+                    logger.info(f"[WA] Ignorato from_me con media: {sender_name}")
+                    return {"ok": True, "action": "ignored_from_me_media"}
+                # Fuori dal gruppo, ignora anche i from_me senza media (testo del bot)
+                if chat_id != jarvis_group_id:
                     logger.info(f"[WA] Ignorato from_me fuori dal gruppo: {sender_name}")
                     return {"ok": True, "action": "ignored_from_me"}
 
@@ -2202,11 +2224,17 @@ async def api_whatsapp_webhook(body: dict):
                 logger.info(f"[WA] Messaggio vuoto ignorato")
                 return {"ok": True, "action": "ignored_empty"}
 
+            # Solo risposte automatiche a: gruppo Jarvis OPPURE Marco
+            _marco_number = "393935434384"
+            _sender_digits = re.sub(r"\D", "", sender_name)
+            if _sender_digits != _marco_number and not is_group and chat_id != jarvis_group_id:
+                logger.info(f"[WA] Ignorato: {sender_name} (non gruppo Jarvis né Marco)")
+                return {"ok": True, "action": "ignored_not_authorized"}
+
             # Blocklist: numeri bloccati (in formato @c.us o @lid)
             _wa_blocked = {"65803361755387"}
-            sender_digits = re.sub(r"\D", "", sender_name)
-            if sender_digits in _wa_blocked:
-                logger.info(f"[WA] Bloccato: {sender_name} (digits={sender_digits})")
+            if _sender_digits in _wa_blocked:
+                logger.info(f"[WA] Bloccato: {sender_name} (digits={_sender_digits})")
                 return {"ok": True, "action": "blocked"}
 
             # Salta messaggi che iniziano con 🤖 (sono risposte del bot)
@@ -2248,7 +2276,11 @@ async def serve_index():
     # Try new frontend build first
     new_p = FRONTEND_DIST / "index.html"
     if FRONTEND_DIST.exists() and new_p.exists():
-        return FileResponse(str(new_p), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+        html = new_p.read_text("utf-8")
+        # Inject legacy scripts that Vite can't bundle (worldnews.js)
+        if '<script src="/assets/app.js"></script>' in html and '<script type="module" src="/assets/worldnews.js"></script>' not in html:
+            html = html.replace('</body>', '  <script type="module" src="/assets/worldnews.js"></script>\n</body>')
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     # Fallback to legacy
     p = STATIC_DIR / "index.html"
     if p.exists():

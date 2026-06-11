@@ -28,8 +28,76 @@
     <div id="trends-status" style="font-size:8px;color:var(--tx3);margin-top:4px"></div>
   </div>
   <div id="trends-list" style="overflow-y:auto;flex:1;padding:4px">
-    <div style="padding:40px;text-align:center;color:var(--tx3);font-family:var(--fm);font-size:10px">
+    <div id="trends-empty" style="padding:40px;text-align:center;color:var(--tx3);font-family:var(--fm);font-size:10px">
       🔍 CERCA TENDENZE<br>
       <span style="font-size:8px">seleziona una categoria o usa la barra di ricerca</span>
     </div>
   </div>
+<script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+var TRENDS_CAT = 'technology';
+function closeTrends(){ document.getElementById('trends-panel')?.classList.remove('open'); }
+window.closeTrends = closeTrends;
+function openTrends(){ document.getElementById('trends-panel')?.classList.add('open'); trendsRefresh(); }
+window.openTrends = openTrends;
+function trendsSetCat(el){
+  document.querySelectorAll('.trends-cat').forEach(function(b){ b.classList.remove('active'); });
+  el.classList.add('active');
+  TRENDS_CAT = el.dataset.cat;
+  trendsRefresh();
+}
+async function trendsRefresh(){
+  var list = document.getElementById('trends-list');
+  var status = document.getElementById('trends-status');
+  var label = document.getElementById('trends-count-label');
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tx4);font-size:9px">⏳ caricamento tendenze...</div>';
+  if(status) status.textContent = '⏳ caricamento...';
+  try {
+    var region = document.getElementById('trends-region').value;
+    var r = await fetch('/api/trends?category='+TRENDS_CAT+'&region='+region+'&max_results=15');
+    var d = await r.json();
+    if(!d.results || d.results.length===0){
+      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--tx3);font-size:10px">📭 Nessuna tendenza trovata per questa categoria</div>';
+      if(label) label.textContent = '0 results';
+      if(status) status.textContent = '';
+      return;
+    }
+    if(label) label.textContent = d.results.length+' results';
+    if(status) status.textContent = d.source ? 'Fonte: '+d.source : '';
+    list.innerHTML = d.results.map(function(t){
+      return '<div style="padding:8px 10px;border-bottom:1px solid var(--n2);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background=\'rgba(0,240,255,0.03)\'" onmouseout="this.style.background=\'transparent\'">'+
+        '<div style="font-size:10px;color:var(--tx);margin-bottom:2px">'+(t.rank ? '<span style="color:var(--tx3);margin-right:6px">#'+t.rank+'</span>' : '')+esc(t.title||'')+'</div>'+
+        (t.description ? '<div style="font-size:8px;color:var(--tx3)">'+esc(t.description)+'</div>' : '')+
+        (t.source ? '<div style="font-size:7px;color:var(--tx4);margin-top:2px">'+esc(t.source)+'</div>' : '')+
+        '</div>';
+    }).join('');
+  } catch(e){
+    list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--pk);font-size:10px">⚠ Errore caricamento tendenze</div>';
+    if(status) status.textContent = '';
+  }
+}
+async function trendsSearch(){
+  var q = document.getElementById('trends-search-input').value.trim();
+  if(!q){ sysmsg('⚠ Inserisci un termine di ricerca'); return; }
+  var list = document.getElementById('trends-list');
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tx4);font-size:9px">⏳ ricerca...</div>';
+  try {
+    var r = await fetch('/api/trends/search', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,region:document.getElementById('trends-region').value})});
+    var d = await r.json();
+    if(!d.results || d.results.length===0){
+      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--tx3);font-size:10px">📭 Nessun risultato per "'+esc(q)+'"</div>';
+      document.getElementById('trends-count-label').textContent = '0 results';
+      return;
+    }
+    document.getElementById('trends-count-label').textContent = d.results.length+' results';
+    list.innerHTML = d.results.map(function(t){
+      return '<div style="padding:8px 10px;border-bottom:1px solid var(--n2)">'+
+        '<div style="font-size:10px;color:var(--tx)">'+esc(t.title||'')+'</div>'+
+        (t.description ? '<div style="font-size:8px;color:var(--tx3)">'+esc(t.description)+'</div>' : '')+
+        '</div>';
+    }).join('');
+  } catch(e){
+    list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--pk);font-size:10px">⚠ Errore ricerca</div>';
+  }
+}
+</script>

@@ -3,14 +3,106 @@
     <button id="rag-close" onclick="closeRag()">✕</button>
   </div>
   <div id="rag-stats" style="padding:8px;font-family:var(--fm);font-size:9px;color:var(--tx2);border-bottom:1px solid var(--n3)"></div>
+  <div id="rag-progress-wrap" style="display:none;padding:6px 8px;border-bottom:1px solid var(--n3)">
+    <div id="rag-progress-bar" style="height:4px;background:var(--n3);border-radius:2px;overflow:hidden">
+      <div id="rag-progress-fill" style="height:100%;width:0%;background:var(--cy);transition:width 0.3s ease"></div>
+    </div>
+    <div id="rag-progress-label" style="font-family:var(--fm);font-size:7px;color:var(--tx3);margin-top:4px;text-align:center"></div>
+  </div>
   <div id="rag-search-wrap">
     <input id="rag-search" placeholder="CERCA NEI DOCUMENTI..." oninput="filterRag(this.value)">
   </div>
-  <div id="rag-list"></div>
+  <div id="rag-list" style="padding:4px 8px;max-height:40vh;overflow-y:auto"></div>
   <div id="rag-add-wrap">
     <input id="rag-add-file" placeholder="Percorso file o cartella...">
-    <button id="rag-add-btn" onclick="addRagFile()">+ AGGIUNGI FILE</button>
-    <button id="rag-folder-btn" onclick="addRagFolder()">+ CARTELLA</button>
-    <button id="rag-ingest-btn" onclick="ingestRag()">📂 INDICIZZA TUTTO</button>
+    <button id="rag-add-btn" onclick="addRagFile()">+ FILE</button>
+    <button id="rag-ingest-btn" onclick="ingestRag()">📂 INDICIZZA</button>
     <button id="rag-clear-btn" onclick="clearRag()" style="background:rgba(255,0,50,0.2);color:#ff3355;border-color:#ff3355">🗑 SVUOTA</button>
   </div>
+<script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function closeRag(){ document.getElementById('rag-panel')?.classList.remove('open'); }
+window.closeRag = closeRag;
+function openRag(){ document.getElementById('rag-panel')?.classList.add('open'); ragRefresh(); }
+window.openRag = openRag;
+function ragRefresh(){
+  var list = document.getElementById('rag-list');
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tx4);font-size:9px">⏳ caricamento...</div>';
+  fetchRagList();
+}
+async function fetchRagList(){
+  var list = document.getElementById('rag-list');
+  var label = document.getElementById('rag-count-label');
+  try {
+    var r = await fetch('/api/rag/list');
+    var d = await r.json();
+    if(!d.documents || d.documents.length===0){
+      list.innerHTML = '<div style="padding:30px;text-align:center;color:var(--tx4);font-family:var(--fm);font-size:9px">&#128196; Nessun documento indicizzato<br><span style="font-size:8px">Aggiungi un file per iniziare</span></div>';
+      if(label) label.textContent = '0 docs';
+      return;
+    }
+    if(label) label.textContent = d.documents.length+' docs';
+    list.innerHTML = d.documents.map(function(doc){
+      return '<div class="rag-item" style="padding:6px 8px;border-bottom:1px solid var(--n2);font-family:var(--fm);font-size:9px;cursor:pointer">'+
+        '<div class="rag-title" style="color:var(--tx)">'+esc(doc.title||doc.filename||'senza titolo')+'</div>'+
+        '<div class="rag-source" style="color:var(--tx3);font-size:8px">'+esc(doc.source||'')+'</div>'+
+        '<div class="rag-chunks" style="color:var(--cy2);font-size:8px">'+(doc.chunks||doc.chunk_count||'0')+' chunks</div>'+
+        '</div>';
+    }).join('');
+  } catch(e){
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--pk);font-size:9px">⚠ Errore caricamento RAG</div>';
+  }
+}
+async function addRagFile(){
+  var inp = document.getElementById('rag-add-file');
+  var path = inp.value.trim();
+  if(!path){ sysmsg('⚠ Inserisci un percorso file'); return; }
+  try {
+    var r = await fetch('/api/rag/add', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path})});
+    var d = await r.json();
+    sysmsg(d.message || d.status || '✅ File aggiunto');
+    inp.value = '';
+    fetchRagList();
+  } catch(e){ sysmsg('⚠ Errore: '+e.message); }
+}
+async function ingestRag(){
+  var inp = document.getElementById('rag-add-file');
+  var path = inp.value.trim();
+  if(!path){ sysmsg('⚠ Inserisci un percorso'); return; }
+  try {
+    sysmsg('📂 Indicizzazione avviata per: '+path);
+    var r = await fetch('/api/rag/ingest', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path})});
+    var d = await r.json();
+    sysmsg(d.message || d.status || '✅ Indicizzazione completata');
+    fetchRagList();
+  } catch(e){ sysmsg('⚠ Errore: '+e.message); }
+}
+async function filterRag(q){
+  var list = document.getElementById('rag-list');
+  if(!q){ fetchRagList(); return; }
+  try {
+    var r = await fetch('/api/rag/search', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,limit:20})});
+    var d = await r.json();
+    if(!d.results || d.results.length===0){
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tx4);font-size:9px">Nessun risultato per "'+esc(q)+'"</div>';
+      return;
+    }
+    list.innerHTML = d.results.map(function(doc){
+      return '<div class="rag-item" style="padding:6px 8px;border-bottom:1px solid var(--n2);font-family:var(--fm);font-size:9px">'+
+        '<div class="rag-title" style="color:var(--tx)">'+esc(doc.title||doc.filename||'doc')+'</div>'+
+        '<div class="rag-score" style="color:var(--am);font-size:8px">'+(doc.score ? Math.round(doc.score*100)+'%' : '')+'</div>'+
+        '<div style="color:var(--tx3);font-size:8px">'+(doc.snippet ? esc(doc.snippet).slice(0,200) : '')+'</div></div>';
+    }).join('');
+  } catch(e){ list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--pk);font-size:9px">⚠ Errore ricerca</div>'; }
+}
+async function clearRag(){
+  if(!confirm('🗑 Eliminare TUTTI i documenti RAG?')) return;
+  try {
+    var r = await fetch('/api/rag/clear', {method:'POST'});
+    var d = await r.json();
+    sysmsg(d.message || d.status || '✅ RAG svuotato');
+    document.getElementById('rag-list').innerHTML = '<div style="padding:30px;text-align:center;color:var(--tx4);font-size:9px">RAG svuotato</div>';
+    document.getElementById('rag-count-label').textContent = '0 docs';
+  } catch(e){ sysmsg('⚠ Errore: '+e.message); }
+}
+</script>

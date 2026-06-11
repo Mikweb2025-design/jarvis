@@ -73,7 +73,7 @@
     </div>
 
     <div style="margin-top:auto">
-      <div class="qa-btn" onclick="resetChat()" style="justify-content:center"><span class="ico">⟳</span> RESET</div>
+      <div class="qa-btn" onclick="(window.clearChat||window.resetChat||function(){})()" style="justify-content:center"><span class="ico">⟳</span> RESET</div>
     </div>
 <!--RIGHT-->
     <div id="weather-section">
@@ -93,10 +93,10 @@
       <div class="section-label">ATMOSPHERE</div>
       <div class="atmo-row"><span>Humidity</span><span id="atmo-hum">--%</span></div>
       <div class="atmo-bar"><div class="fill" id="atmo-hum-bar" style="width:0%"></div></div>
-      <div class="atmo-row"><span>UV Index</span><span id="atmo-uv">--</span></div>
-      <div class="atmo-bar"><div class="fill" id="atmo-uv-bar" style="width:0%"></div></div>
-      <div class="atmo-row"><span>Visibility</span><span id="atmo-vis">-- km</span></div>
-      <div class="atmo-bar"><div class="fill" id="atmo-vis-bar" style="width:0%"></div></div>
+      <div class="atmo-row"><span>CPU Load</span><span id="atmo-cpu">--%</span></div>
+      <div class="atmo-bar"><div class="fill" id="atmo-cpu-bar" style="width:0%"></div></div>
+      <div class="atmo-row"><span>RAM Used</span><span id="atmo-ram">--%</span></div>
+      <div class="atmo-bar"><div class="fill" id="atmo-ram-bar" style="width:0%"></div></div>
     </div>
 
     <div class="clocks-section">

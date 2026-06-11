@@ -1,0 +1,84 @@
+<div class="panel-header">
+    <h3>⚙ IMPOSTAZIONI</h3>
+    <button onclick="closeSettings()">✕</button>
+  </div>
+  <div style="padding:8px 12px;border-bottom:1px solid var(--n3)">
+    <div style="margin-bottom:4px;font-size:9px;color:var(--tx3)">🧠 LLM Provider</div>
+    <div id="settings-providers" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+  </div>
+  <div style="padding:8px 12px;border-bottom:1px solid var(--n3)">
+    <div style="margin-bottom:4px;font-size:9px;color:var(--tx3)">🎤 Voce TTS</div>
+    <div id="settings-voices" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+  </div>
+  <div style="padding:8px 12px;border-bottom:1px solid var(--n3)">
+    <div style="margin-bottom:4px;font-size:9px;color:var(--tx3)">🌙 Tema</div>
+    <div id="settings-themes" style="display:flex;gap:4px;flex-wrap:wrap">
+      <button onclick="selectTheme(this)" class="st-btn" data-theme="cyberpunk">⚡ CYBER</button>
+      <button onclick="selectTheme(this)" class="st-btn" data-theme="holo">💎 HOLO</button>
+      <button onclick="selectTheme(this)" class="st-btn" data-theme="sunset">🌅 SUNSET</button>
+      <button onclick="selectTheme(this)" class="st-btn" data-theme="matrix">🌿 MATRIX</button>
+      <button onclick="selectTheme(this)" class="st-btn" data-theme="crystal">❄ CRYSTAL</button>
+    </div>
+  </div>
+  <div id="settings-info" style="padding:12px;font-size:9px;color:var(--tx3);overflow-y:auto;flex:1"></div>
+<style>
+#settings-panel{position:fixed;top:50px;right:10px;width:400px;max-height:85vh;background:rgba(10,10,18,0.97);border:1px solid var(--pp);border-radius:4px;display:none;z-index:1010;overflow:hidden;box-shadow:0 0 30px rgba(170,0,255,0.3);backdrop-filter:blur(16px)}
+#settings-panel.open{display:flex;flex-direction:column}
+.st-btn{background:var(--n2);border:1px solid var(--n3);color:var(--tx2);padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer}
+.st-btn:hover{background:var(--n3);color:var(--tx)}
+.st-btn.active{border-color:var(--cy2);color:var(--cy);background:rgba(0,240,255,0.1)}
+.st-btn.voice-active{border-color:var(--pp);color:var(--pp);background:rgba(170,0,255,0.1)}
+</style>
+<script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function closeSettings(){ document.getElementById('settings-panel')?.classList.remove('open'); }
+window.closeSettings = closeSettings;
+function openSettings(){
+  document.getElementById('settings-panel')?.classList.add('open');
+  loadSettingsContent();
+}
+window.openSettings = openSettings;
+async function loadSettingsContent(){
+  var info = document.getElementById('settings-info');
+  if(info && !info.textContent.trim()) info.innerHTML = '<span style="color:var(--tx4)">⏳ caricamento...</span>';
+  try {
+    var r = await fetch('/api/sysinfo');
+    var d = await r.json();
+    if(info) info.innerHTML =
+      '<div style="margin-bottom:6px;color:var(--cy);font-family:var(--fd);font-size:10px;letter-spacing:0.2em">⚡ SISTEMA</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">' +
+      '<div><span style="color:var(--tx4)">CPU:</span> '+esc(d.cpu_usage||'--')+'</div>' +
+      '<div><span style="color:var(--tx4)">RAM:</span> '+esc(d.ram_free||'--')+' libera</div>' +
+      '<div><span style="color:var(--tx4)">DISCO:</span> '+esc(d.disk_pct||'--')+'</div>' +
+      '<div><span style="color:var(--tx4)">BATTERIA:</span> '+esc(d.battery||'--')+'</div>' +
+      '<div><span style="color:var(--tx4)">UPTIME:</span> '+esc(d.uptime||'--')+'</div>' +
+      '<div><span style="color:var(--tx4)">PROCESSI:</span> '+esc(d.processes||'--')+'</div>' +
+      '</div>';
+  } catch(e) {
+    if(info) info.innerHTML = '<span style="color:var(--pk)">⚠ Errore caricamento sistema</span>';
+  }
+  try {
+    var pdiv = document.getElementById('settings-providers');
+    if(pdiv && pdiv.children.length === 0){
+      var pr = await fetch('/api/providers/list');
+      var pd = await pr.json();
+      if(pd.providers && pd.providers.length > 0){
+        pdiv.innerHTML = pd.providers.map(function(p){
+          var active = p.active ? ' active' : '';
+          return '<button class="st-btn'+active+'" onclick="selectProvider(\''+esc(p.name)+'\')">'+esc(p.name)+'</button>';
+        }).join('');
+      } else {
+        pdiv.innerHTML = '<span style="color:var(--tx4);font-size:8px">Nessun provider configurato</span>';
+      }
+    }
+  } catch(e) { /* provider list non disponibile */ }
+}
+window.selectProvider = async function(name){
+  try {
+    await fetch('/api/providers/set', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:name})});
+    document.querySelectorAll('#settings-providers .st-btn').forEach(function(b){ b.classList.remove('active'); });
+    event.target.classList.add('active');
+  } catch(e) { sysmsg('⚠ Errore cambio provider: '+e.message); }
+};
+</script>
+

@@ -1,5 +1,5 @@
 import { api } from './api/client';
-import { byId, byAll } from './utils/dom';
+import { byId, byAll, bySel, esc, ts } from './utils/dom';
 import { initChat, updateTopTime, sendMessage, setVoice } from './components/chat';
 import { initTheme } from './components/theme';
 import { initRouting } from './components/routing';
@@ -13,10 +13,10 @@ let srvOnline = false;
   if (!bar) return;
   const steps = [
     { p: 25, d: 300 }, { p: 50, d: 600 },
-    { p: 75, d: 900 }, { p: 100, d: 1200 },
+    { p: 75, d: 900 }, { p: 100, d: 1300 },
   ];
   steps.forEach((s) => setTimeout(() => { bar!.style.width = `${s.p}%`; }, s.d));
-  setTimeout(() => byId('boot')?.classList.add('hidden'), 1500);
+  setTimeout(() => byId('boot')?.classList.add('hidden'), 2200);
 })();
 
 // ── Legacy page loading (pages/*.html via XHR) — runs BEFORE DOMContentLoaded ──
@@ -48,9 +48,9 @@ function sysmsg(text: string) {
 byId('webcam-close')?.addEventListener('click', () => byId('webcam-widget')?.classList.add('hidden'));
 byId('webcam-grid-close')?.addEventListener('click', () => byId('webcam-grid-widget')?.classList.add('hidden'));
 byId('ha-widget-close')?.addEventListener('click', () => byId('ha-widget')?.classList.add('hidden'));
-byId('mob-actions-btn')?.addEventListener('click', () => byId('mob-backdrop')?.classList.toggle('hidden'));
-byId('mob-backdrop')?.addEventListener('click', () => byId('mob-backdrop')?.classList.add('hidden'));
-byId('mob-drawer-close')?.addEventListener('click', () => byId('mob-backdrop')?.classList.add('hidden'));
+byId('mob-actions-btn')?.addEventListener('click', () => byId('mob-backdrop')?.classList.toggle('active'));
+byId('mob-backdrop')?.addEventListener('click', () => byId('mob-backdrop')?.classList.remove('active'));
+byId('mob-drawer-close')?.addEventListener('click', () => byId('mob-backdrop')?.classList.remove('active'));
 
 // ── Clock ──
 function tick() {
@@ -133,7 +133,15 @@ async function loadSysInfo() {
 
     byId('waste-info')!.textContent = `${d.processes || '--'} processes`;
     byId('uptime')!.textContent = `UPTIME: ${d.uptime || '--'}`;
-    byId('visual-label')!.textContent = `CPU ${d.cpu_usage || '0%'} / RAM ${Math.round(100 - (parseInt(d.ram_free) || 70))}%`;
+    const cpuPct = parseInt((d.cpu_usage || '0%').replace('%', '')) || 0;
+    const ramFree = parseInt(d.ram_free) || 70;
+    const ramTotal = parseInt(d.ram_total) || 100;
+    const ramPct = Math.round(100 - (ramFree / (ramTotal || 1)) * 100);
+    byId('visual-label')!.textContent = `CPU ${cpuPct}% / RAM ${ramPct}%`;
+    byId('atmo-cpu')!.textContent = `${cpuPct}%`;
+    byId('atmo-cpu-bar')!.style.width = `${cpuPct}%`;
+    byId('atmo-ram')!.textContent = `${ramPct}%`;
+    byId('atmo-ram-bar')!.style.width = `${ramPct}%`;
   } catch { /* ignore */ }
 }
 
@@ -151,6 +159,18 @@ async function ping() {
     byId('status-text')!.textContent = 'OFFLINE';
   }
 }
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    byId('minput')?.focus();
+  }
+  if (e.key === 'Escape') {
+    bySel('.panel.open')?.classList.remove('open');
+    byId('mob-backdrop')?.classList.remove('active');
+  }
+});
 
 // ── Init all modules ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -283,6 +303,18 @@ function loadPages() {
     const msg: string = d.unread || '📬 Nessuna email';
     if (typeof (window as any).sysmsg === 'function') (window as any).sysmsg(msg);
     if (msg.includes('Nessuna')) return;
+    const recent: any = await api.mailRecent();
+    const emails = recent?.emails || recent?.messages || [];
+    if (emails.length) {
+      const el = byId('msgs');
+      if (el) {
+        const box = document.createElement('div');
+        box.className = 'msg';
+        box.innerHTML = `<div class="msg-header"><div class="msg-avatar jarvis">AI</div><span class="msg-name jarvis">J.A.R.V.I.S</span><span class="msg-time">${ts()}</span></div><div class="msg-body jarvis-msg">📧 <strong>Ultime email</strong><br>${emails.slice(0,3).map((e: any) => `• <strong>${esc(e.subject||'')}</strong> <span style="color:var(--tx3);font-size:11px">— ${esc(e.sender||'')}</span>`).join('<br>')}</div>`;
+        el.appendChild(box);
+        el.scrollTop = el.scrollHeight;
+      }
+    }
   } catch {}
 };
 
@@ -316,7 +348,7 @@ function initMobDrawer() {
   ).join('');
   // Highlight active page on click
   body.addEventListener('click', () => {
-    byId('mob-backdrop')?.classList.add('hidden');
+    byId('mob-backdrop')?.classList.remove('active');
   });
 }
 
