@@ -385,7 +385,7 @@ TOOLS_SCHEMA = [
     {"type":"function","function":{"name":"doc_make_html_presentation","description":"Crea presentazione HTML interattiva con stile sentry, navigazione tastiera, grafici canvas. Supporta: title, section, content, two_column, table, chart(bar/pie/line), image, thank_you. Temi: corporate, dark, nature, sunset. Singolo file HTML autoportante (no npm/build richiesti). Input: JSON con title, theme, author, slides array","parameters":{"type":"object","properties":{"data":{"type":"string","description":"JSON con title, theme, slides array. Ogni slide: type, title, subtitle, content, items[], headers[], rows[][], chart_type, image, columns[][]"}}}}},
     {"type":"function","function":{"name":"doc_auto_presentation","description":"Crea presentazione AUTOMATICA con LLM: basta dare un tema/argomento, l'IA genera i contenuti delle slide da sola. Supporta PowerPoint (pptx) e HTML interattivo.","parameters":{"type":"object","properties":{"topic":{"type":"string","description":"Tema della presentazione (es: 'Intelligenza Artificiale', 'Report vendite Q1 2024', 'Strategia di marketing')"},"format":{"type":"string","enum":["pptx","html"],"description":"Formato: pptx (PowerPoint) o html (presentazione web interattiva)","default":"pptx"},"theme":{"type":"string","enum":["corporate","dark","nature","sunset"],"description":"Tema visivo","default":"corporate"}},"required":["topic"]}}},
     # ── Image Generation v12.0 (IONOS Hub) ──
-    {"type":"function","function":{"name":"image_generate","description":"Genera immagini con AI via IONOS Hub (FLUX, SD3.5). Crea immagini da prompt testuale.","parameters":{"type":"object","properties":{"prompt":{"type":"string","description":"Descrizione dell'immagine da generare"},"model":{"type":"string","description":"Modello: black-forest-labs/FLUX.1-schnell, black-forest-labs/FLUX.1-dev, stabilityai/stable-diffusion-3.5-large","default":"black-forest-labs/FLUX.1-schnell"},"size":{"type":"string","description":"Dimensione: 1024x1024, 1024x1792, 1792x1024","default":"1024x1024"},"n":{"type":"integer","description":"Numero di immagini da generare","default":1}},"required":["prompt"]}}},
+    {"type":"function","function":{"name":"image_generate","description":"Genera immagini con AI. IMPORTANTE: passa come prompt la DESCRIZIONE COMPLETA e DETTAGLIATA che l'utente ha fornito, senza riassumere o tagliare. Includi soggetto, azione, colore, sfondo, stile — tutto. Più dettagliato è il prompt, migliore è il risultato.", "parameters":{"type":"object","properties":{"prompt":{"type":"string","description":"Descrizione COMPLETA e DETTAGLIATA dell'immagine (copia fedelmente la richiesta dell'utente, non riassumere)"},"model":{"type":"string","description":"Modello disponibile: black-forest-labs/FLUX.1-schnell (solo questo supportato)","default":"black-forest-labs/FLUX.1-schnell"},"size":{"type":"string","description":"Dimensione: 1024x1024, 1024x1792, 1792x1024","default":"1024x1024"},"n":{"type":"integer","description":"Numero di immagini da generare","default":1}},"required":["prompt"]}}},
     {"type":"function","function":{"name":"image_list_models","description":"Elenca i modelli di image generation disponibili (FLUX, SD3.5)","parameters":{"type":"object","properties":{}}}},
     # ── Music Generation v12.0 (ACE-Step) ──
     {"type":"function","function":{"name":"music_generate","description":"Genera musica con AI via ACE-Step 1.5 (funziona offline su GPU locale). Crea tracce musicali da prompt testuale o preimpostazioni di genere.","parameters":{"type":"object","properties":{"prompt":{"type":"string","description":"Descrizione della musica da generare (opzionale se usi un genere preimpostato)","default":""},"genre":{"type":"string","description":"Genere: electronic, ambient, cinematic, lo-fi, synthwave, jazz, classical","default":"electronic"},"duration":{"type":"integer","description":"Durata in secondi (max 240)","default":30},"temperature":{"type":"number","description":"Creatività (0.0-2.0)","default":1.0}},"required":[]}}},
@@ -1510,6 +1510,11 @@ def image_generate_tool(prompt="", model="black-forest-labs/FLUX.1-schnell", siz
     try:
         if not prompt or not prompt.strip():
             return "⚠ Prompt vuoto! Devi specificare cosa generare. Rileggi la richiesta dell'utente ed estrai SOLO il soggetto visivo."
+        # Coercizione tipi: l'LLM a volte passa n come stringa
+        try:
+            n = int(n)
+        except (ValueError, TypeError):
+            n = 1
         # Pulizia prompt: rimuove il framing della richiesta WhatsApp
         import re as _re
         _clean = prompt.strip()
@@ -1530,6 +1535,7 @@ def image_generate_tool(prompt="", model="black-forest-labs/FLUX.1-schnell", siz
             r'(?i)\s*(per|via)\s+(whatsapp|whats?ap).*$',
             r'(?i)^per\s+favore[\s,]+',
             r'(?i)^grazie[\s,!]+',
+            r'(?i)^\[whatsapp[^\]]*\]\s*',
         ]
         for _pat in _framing:
             _clean = _re.sub(_pat, '', _clean).strip()

@@ -8,12 +8,12 @@ from jarvis_tools import execute_tool, TOOLS_SCHEMA, memory
 from jarvis_memory import KnowledgeGraph
 from jarvis_rag import rag
 
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+LLM_URL = "https://openai.inference.de-txl.ionos.com/v1/chat/completions"
 OLLAMA_URL = "http://localhost:11434/api/chat"
 
-# ── SMART TIER ROUTING ──
-FAST_MODEL  = "llama-3.1-8b-instant"   # ~3-4× più veloce, ottimo per query semplici
-DEEP_MODEL  = "llama-3.3-70b-versatile" # più potente, per analisi/coding/testo lungo
+# ── SMART TIER ROUTING (entrambi su IONOS Hub) ──
+FAST_MODEL  = "meta-llama/Llama-3.3-70B-Instruct"
+DEEP_MODEL  = "meta-llama/Llama-3.3-70B-Instruct"
 
 FAST_TRIGGERS = [
     # saluti e cortesie
@@ -117,6 +117,7 @@ REGOLE:
 16. MCP: mcp_list per vedere server, mcp_enable per attivare (github, slack, filesystem), mcp_call per usare tool
 17. Home Assistant: ha_states per vedere lo stato di tutte le entità, ha_state per un'entità specifica, ha_service per controllare luci, switch, termostato, ecc. (domain=light, switch, climate, media_player...). Usa ha_config per info sulla versione HA. ha_dashboard per aprire la dashboard HA nel browser
 18. World News: world_news per notizie dal mondo geo-localizzate su mappa. Mostra news da BBC, NYT, ANSA, Tagesschau.
+19. Image generation: quando usi image_generate, passa come prompt la DESCRIZIONE COMPLETA che l'utente ha fornito (colori, azione, sfondo, stile, tutto). Non riassumere mai il prompt — più dettagliato è, migliore è l'immagine.
 """
 
 class JarvisAgent:
@@ -244,7 +245,7 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
         parts.append(f"TOPICO CORRENTE: {self.current_topic}")
         return "\n\n".join(parts)
 
-    def _build_system_prompt(self, user_message):
+    def _build_system_prompt(self, user_message, extra_context=""):
         """Costruisce il system prompt completo con memoria, grafo, RAG, tono e contesto."""
         topic = self._detect_topic(user_message)
         tone = self._get_tone_instructions(topic)
@@ -268,6 +269,8 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
 
         # Assemblea
         parts = [SYSTEM_PROMPT]
+        if extra_context:
+            parts.append(extra_context)
         if rag_context:
             parts.append(rag_context)
         if graph_context:
@@ -310,7 +313,7 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
             "Content-Type": "application/json",
         }
         try:
-            resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=45)
+            resp = requests.post(LLM_URL, json=payload, headers=headers, timeout=45)
             if not resp.ok:
                 return None, f"Groq {resp.status_code}"
             code = resp.json()["choices"][0]["message"]["content"].strip()
@@ -903,7 +906,7 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
 
         return actions_done
 
-    def chat(self, user_message):
+    def chat(self, user_message, extra_context="", max_tokens=2048):
         # 1. rileva azioni dirette
         actions_done = self._detect_direct_actions(user_message)
 
@@ -915,15 +918,15 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
             filtered = [a for a in actions_done if not a.startswith('SPEECH:')]
             reply = speech_msg or ""
             self.history.append({"role": "user", "content": user_message})
-            self.history.append({"role": "assistant", "content": reply or "✅"})
+            self.history.append({"role": "assistant", "content": reply or "✅ Completato"})
             if len(self.history) > 40:
                 self.history = self.history[-40:]
-            memory.log_conversation("assistant", reply or "✅")
+            memory.log_conversation("assistant", reply or "✅ Completato")
             self._update_conversation_summary(user_message, reply)
             return reply, filtered
 
         # 2. costruisci system prompt avanzato (memoria + grafo + tono + contesto)
-        system_msg = self._build_system_prompt(user_message)
+        system_msg = self._build_system_prompt(user_message, extra_context=extra_context)
         self.history.append({"role": "user", "content": user_message})
         if len(self.history) > 40:
             self.history = self.history[-40:]
@@ -932,13 +935,13 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
 
         if self._needs_tools(user_message):
             # ── LOOP AGENTICO: l'LLM sceglie i tool, esegue, vede i risultati, itera ──
-            reply, tool_actions = self._agentic_loop(messages, user_message)
-            self.history.append({"role": "assistant", "content": reply or "✅"})
-            memory.log_conversation("assistant", reply or "✅")
+            reply, tool_actions = self._agentic_loop(messages, user_message, max_tokens=max_tokens)
+            self.history.append({"role": "assistant", "content": reply or "✅ Completato"})
+            memory.log_conversation("assistant", reply or "✅ Completato")
             self._update_conversation_summary(user_message, reply)
             return reply, (actions_done + tool_actions)
 
-        # ── Chat normale: completion semplice ──
+        # ── Chat normale: completion semplice (niente tool, evitiamo JSON spurio) ──
         chosen_model = _detect_complexity(user_message) or self.cfg["groq"]["model"]
         topic = self._detect_topic(user_message)
         temp = float(self.cfg["groq"]["temperature"])
@@ -947,10 +950,10 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
         elif topic == "wellbeing":
             temp = max(temp, 0.7)  # più alto = più creativo/caldo
         payload = {"model": chosen_model, "messages": messages,
-                   "temperature": temp, "max_tokens": 2048}
+                   "temperature": temp, "max_tokens": max_tokens}
         headers = {"Authorization": f"Bearer {self.cfg['groq']['api_key']}", "Content-Type": "application/json"}
         try:
-            resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=45)
+            resp = requests.post(LLM_URL, json=payload, headers=headers, timeout=45)
             reply = resp.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
             reply = f"[Errore connessione] {e}"
@@ -977,26 +980,52 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
     def _relevant_tools(self, user_message):
         """Seleziona un sottoinsieme rilevante di TOOLS_SCHEMA per non superare i
         limiti di token (lo schema completo da 100+ tool è troppo grande).
-        I memory e HA tool sono sempre inclusi perché critici per le azioni."""
+        I memory e HA tool sono sempre inclusi perché critici per le azioni.
+        I tool contestuali (image_generate, whatsapp_*, music_*, doc_* ecc.)
+        vengono spostati in cima se la richiesta dell'utente li richiede."""
         low = user_message.lower()
         is_blender = any(w in low for w in ['blender','render','3d','modell','oggetto 3d','scena 3d','avatar 3d','polyhaven','hdri'])
-        priority_tools = []  # memory_*, ha_* — sempre inclusi
-        subset = []
+
+        # Rileva intento dell'utente per priorizzare i tool giusti
+        needs_image = any(w in low for w in ['foto','immagine','image','disegna','genera','crea','render'])
+        needs_whatsapp = any(w in low for w in ['whatsapp','whatsap','wa','messagg','invia','manda','gruppo'])
+        needs_music = any(w in low for w in ['musica','canzone','song','music','suona','melodia'])
+        needs_docs = any(w in low for w in ['documento','word','excel','pdf','presentazione','powerpoint','slide','foglio'])
+        needs_web = any(w in low for w in ['cerca','trova','web','internet','browser','naviga','google'])
+        needs_knowledge = any(w in low for w in ['cos\'è','chi è','che cos','spiega','significa','knowledge','grafo'])
+        needs_video = any(w in low for w in ['video','webcam','stream','rtsp','analisi video'])
+
+        context_prefixes = set()
+        if needs_image: context_prefixes.update(['image_', 'vision_'])
+        if needs_whatsapp: context_prefixes.add('whatsapp_')
+        if needs_music: context_prefixes.add('music_')
+        if needs_docs: context_prefixes.add('doc_')
+        if needs_web: context_prefixes.update(['web_', 'browser_'])
+        if needs_knowledge: context_prefixes.add('kg_')
+        if needs_video: context_prefixes.add('video_')
+
+        priority_tools = []    # memory_*, ha_* — sempre inclusi
+        context_tools = []     # tool corrispondenti all'intento rilevato
+        subset = []            # tutto il resto
+
         for t in TOOLS_SCHEMA:
             n = t["function"]["name"]
             if n.startswith("memory_") or n.startswith("ha_"):
                 priority_tools.append(t)
+            elif any(n.startswith(p) for p in context_prefixes):
+                context_tools.append(t)
             elif is_blender:
                 if n.startswith("blender_"):
                     subset.append(t)
             else:
                 if not n.startswith("blender_"):
                     subset.append(t)
-        # Groq ha un limite pratico: tieni max ~24 tool
-        result = priority_tools + subset
+
+        # I tool contestuali subito dopo quelli sempre presenti
+        result = priority_tools + context_tools + subset
         return result[:24] if result else TOOLS_SCHEMA[:24]
 
-    def _agentic_loop(self, messages, user_message, max_iters=4):
+    def _agentic_loop(self, messages, user_message, max_iters=6, max_tokens=2048):
         """Loop di tool-calling nativo Groq: il modello decide quali tool chiamare,
         i risultati gli vengono rimandati, finché non produce una risposta finale.
         Ritorna (testo_finale, lista_azioni_per_UI)."""
@@ -1025,7 +1054,7 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
                 "model": chosen_model,
                 "messages": msgs,
                 "temperature": float(self.cfg["groq"]["temperature"]),
-                "max_tokens": 2048,
+                "max_tokens": max_tokens,
                 "tools": tools,
                 "tool_choice": "auto",
             }
@@ -1033,10 +1062,10 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
             msg = None
             for attempt in range(3):
                 try:
-                    resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=60)
+                    resp = requests.post(LLM_URL, json=payload, headers=headers, timeout=60)
                     if resp.status_code == 429:
                         import time as _t
-                        wait = 4 * (attempt + 1)
+                        wait = 6 * (attempt + 1)
                         print(f"  [Agentic] rate limit, retry tra {wait}s...")
                         _t.sleep(wait)
                         continue
@@ -1048,8 +1077,7 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
                 except Exception as e:
                     return f"[Errore connessione] {e}", actions
             if msg is None:
-                # esauriti i retry: se abbiamo già fatto azioni, chiudiamo con successo parziale
-                return (final_text or "✅ Completato (rate limit Groq)"), actions
+                return (final_text or "[Errore] Rate limit Groq: riprova tra qualche secondo"), actions
 
             tool_calls = msg.get("tool_calls")
             if not tool_calls:
@@ -1088,7 +1116,7 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
                     "content": result_str[:2000],
                 })
         else:
-            final_text = final_text or "✅ Completato (limite iterazioni raggiunto)"
+            final_text = final_text or "[Errore] Limite iterazioni raggiunto: l'operazione non è stata completata"
         return final_text, actions
 
     def _legacy_complete(self, messages, payload, actions_done):
@@ -1098,7 +1126,7 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
             "Content-Type": "application/json"
         }
         try:
-            resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=45)
+            resp = requests.post(LLM_URL, json=payload, headers=headers, timeout=45)
             data = resp.json()
             reply = data["choices"][0]["message"]["content"].strip()
             return reply, actions_done
@@ -1170,7 +1198,9 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
             "messages": messages,
             "temperature": temp,
             "max_tokens": 2048,
-            "stream": True
+            "stream": True,
+            "tools": self._relevant_tools(user_message),
+            "tool_choice": "none",
         }
         if chosen_model == FAST_MODEL:
             print(f"  [Tier] FAST stream ({FAST_MODEL})")
@@ -1180,7 +1210,7 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
         t0 = time.time()
         full_reply = ""
         try:
-            resp = requests.post(GROQ_URL, json=payload, headers=headers, timeout=60, stream=True)
+            resp = requests.post(LLM_URL, json=payload, headers=headers, timeout=60, stream=True)
             if not resp.ok:
                 err = resp.json() if resp.headers.get('content-type','').startswith('application/json') else {}
                 msg = err.get('error', {}).get('message', resp.text[:200])

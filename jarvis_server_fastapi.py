@@ -404,7 +404,7 @@ def _tts_worker():
     try:
         import mlx.core as mx
         from mlx_audio.tts.utils import load_model
-        model_name = cfg["tts"].get("qwen3_model", "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit")
+        model_name = cfg["tts"].get("qwen3_model", "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit")
         print(f"  [TTS] Worker: caricamento {model_name}...")
         t0 = time.time()
         _tts_model = load_model(model_name)
@@ -418,6 +418,7 @@ def _tts_worker():
         return
 
     import tempfile, soundfile as sf
+    is_voice_design = getattr(_tts_model.config, 'tts_model_type', '') == 'voice_design'
     while not _tts_stop.is_set():
         _tts_event.wait(timeout=1.0)
         if _tts_stop.is_set():
@@ -429,8 +430,14 @@ def _tts_worker():
         if task is None:
             continue
         try:
-            text, spk, lang, inst = task["text"], task["speaker"], task["language"], task["instruct"]
-            results = list(_tts_model.generate_custom_voice(text=text, speaker=spk, language=lang, instruct=inst))
+            text = task["text"]
+            lang = task["language"]
+            spk = task.get("speaker", "vivian")
+            inst = task.get("inst", "Parla in italiano con accento italiano naturale, pronuncia perfetta")
+            if is_voice_design:
+                results = list(_tts_model.generate_voice_design(text=text, language=lang, instruct=inst))
+            else:
+                results = list(_tts_model.generate_custom_voice(text=text, speaker=spk, language=lang, instruct=inst))
             audio = results[0].audio
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 output_path = f.name
@@ -460,33 +467,33 @@ def load_qwen3_model_safe():
 
 def _qwen3_generate(text, voice="vivian", language="italian"):
     global _tts_queue, _tts_result
-    if len(text) > 150:
+    if len(text) > 500:
         return None, None, "text too long for Qwen3, use Edge TTS"
     lang_config = cfg["tts"].get("qwen3_languages", {})
     if language and language.lower() in lang_config:
         lc = lang_config[language.lower()]
         spk = voice if voice else lc.get("voice", "vivian")
         lang = lc.get("language", "Italian")
-        inst = lc.get("instruct", "Clear, professional tone")
+        inst = lc.get("instruct", "Parla in italiano con accento italiano naturale, pronuncia perfetta")
     else:
         spk = voice or "vivian"
         lang = language or "Italian"
-        inst = "Clear, professional tone"
+        inst = "Parla in italiano con accento italiano naturale, pronuncia perfetta"
     task_id = f"task_{time.time()}_{id(threading.current_thread())}"
     done = threading.Event()
     with _tts_lock:
         _tts_queue = task_id
-        _tts_result[task_id] = {"task": {"text": text, "speaker": spk, "language": lang, "instruct": inst}, "done": done}
+        _tts_result[task_id] = {"task": {"text": text, "speaker": spk, "language": lang, "inst": inst}, "done": done}
     _tts_event.set()
-    if done.wait(timeout=20):
+    if done.wait(timeout=30):
         with _tts_lock:
             result = _tts_result.get(task_id)
         if result and "data" in result:
             return result["data"], result["content_type"], result["error"]
     return None, None, "timeout"
 
-def _generate_tts_chunk(text, voice="vivian", language="italian", speed=1.0):
-    import tempfile, subprocess
+async def _generate_tts_chunk(text, voice="vivian", language="italian", speed=1.0):
+    import tempfile
     clean = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     clean = re.sub(r'\*(.+?)\*', r'\1', clean)
     clean = re.sub(r'`(.+?)`', r'\1', clean)
@@ -495,33 +502,27 @@ def _generate_tts_chunk(text, voice="vivian", language="italian", speed=1.0):
     if not clean:
         return None, None
     try:
-        if _tts_model is None:
-            raise Exception("Modello Qwen3-TTS non disponibile")
-        import tempfile, soundfile as sf
-        data, ct, err = _qwen3_generate(clean, voice=voice, language=language)
-        if data is not None:
-            return data, ct
-        raise Exception(err or "Qwen3-TTS returned no data")
+        if _tts_model is not None:
+            data, ct, err = _qwen3_generate(clean, voice=voice, language=language)
+            if data is not None:
+                return data, ct
     except Exception as e:
         print(f"  [TTS Qwen3] fallito: {e}")
-        try:
-            import asyncio, edge_tts
-            tts_voice = VOICE_MAP.get(voice, "it-IT-ElsaNeural")
-            rate = f"+{int((speed-1)*100)}%"
-            async def _gen():
-                comm = edge_tts.Communicate(clean, tts_voice, rate=rate)
-                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                    p = f.name
-                await comm.save(p)
-                return p
-            p = asyncio.run(_gen())
-            with open(p, "rb") as f:
-                data = f.read()
-            os.unlink(p)
-            return data, "audio/mpeg"
-        except Exception as e:
-            print(f"  [TTS Edge] fallito: {e}")
-            return None, None
+    try:
+        import edge_tts
+        tts_voice = VOICE_MAP.get(voice, "it-IT-ElsaNeural")
+        rate = f"+{int((speed-1)*100)}%"
+        comm = edge_tts.Communicate(clean, tts_voice, rate=rate)
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            p = f.name
+        await comm.save(p)
+        with open(p, "rb") as f:
+            data = f.read()
+        os.unlink(p)
+        return data, "audio/mpeg"
+    except Exception as e:
+        print(f"  [TTS Edge] fallito: {e}")
+        return None, None
 
 _HAVE_DEEP = False
 try:
@@ -578,6 +579,10 @@ async def lifespan(app: FastAPI):
     try:
         from jarvis_video_analytics import start_analytics
         start_analytics()
+    except:
+        pass
+    try:
+        _ensure_openwa_running()
     except:
         pass
     try:
@@ -892,7 +897,7 @@ async def api_translate(body: TranslateRequest):
         pass
     if not translated:
         try:
-            from jarvis_agent import GROQ_URL
+            from jarvis_agent import LLM_URL as GROQ_URL
             import requests
             payload = {
                 "model": cfg["groq"]["model"],
@@ -921,7 +926,7 @@ async def api_tts(body: TTSRequest):
     if not body.text:
         raise HTTPException(400, "Testo vuoto")
     t0 = time.time()
-    data, content_type = _generate_tts_chunk(body.text, voice=body.voice, language=body.language, speed=body.speed)
+    data, content_type = await _generate_tts_chunk(body.text, voice=body.voice, language=body.language, speed=body.speed)
     if data is None:
         try:
             import subprocess
@@ -945,7 +950,7 @@ async def api_wav2lip(body: TTSRequest):
     if not body.text:
         raise HTTPException(400, "Testo vuoto")
     t0 = time.time()
-    tts_data, _ = _generate_tts_chunk(body.text, voice=body.voice, language=body.language)
+    tts_data, _ = await _generate_tts_chunk(body.text, voice=body.voice, language=body.language)
     if tts_data is None:
         raise HTTPException(500, "TTS fallito")
     audio_path = "/tmp/wav2lip_input.wav"
@@ -1032,7 +1037,8 @@ async def api_memory_graph():
 @app.get("/api/calendar/today")
 async def api_calendar_today():
     from jarvis_calendar import get_today_events
-    return {"events": get_today_events()}
+    events = get_today_events()
+    return {"events": events}
 
 @app.post("/api/calendar/create")
 async def api_calendar_create(body: CalendarCreate):
@@ -1857,7 +1863,7 @@ async def api_providers():
         raw = p.list_providers()
         data = {"providers": [], "current": ""}
         for line in raw.split("\n"):
-            for name in ["groq", "ollama", "openai", "gemini", "anthropic"]:
+            for name in ["groq", "ollama", "openai", "gemini", "anthropic", "ionos"]:
                 if line.startswith(name) or name in line:
                     if "OK" in line:
                         data["current"] = name
@@ -1986,6 +1992,51 @@ async def api_video_analytics_calibrate(body: VideoAnalyticsCalibrate):
 
 _wa_webhook_url = "http://127.0.0.1:9999/api/whatsapp/webhook"
 
+def _ensure_openwa_running():
+    """Avvia OpenWA come processo se non è già in esecuzione su :2785"""
+    import socket, subprocess, time, shutil
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.settimeout(2)
+        s.connect(("127.0.0.1", 2785))
+        s.close()
+        return
+    except:
+        pass
+    finally:
+        s.close()
+    openwa_dir = os.path.expanduser("~/OpenWA")
+    if not os.path.isdir(openwa_dir):
+        logger.warning("[WA] OpenWA directory non trovata: %s", openwa_dir)
+        return
+    node_bin = shutil.which("node") or "/opt/homebrew/bin/node"
+    if not os.path.isfile(node_bin):
+        logger.warning("[WA] node non trovato (cercato in PATH e /opt/homebrew/bin/node)")
+        return
+    logfile = open(os.path.join(os.path.dirname(__file__), "data", "openwa.log"), "a")
+    logger.info("[WA] Avvio OpenWA da %s con node=%s ...", openwa_dir, node_bin)
+    proc = subprocess.Popen(
+        [node_bin, "dist/main.js"],
+        cwd=openwa_dir,
+        stdout=logfile,
+        stderr=logfile,
+        start_new_session=True,
+    )
+    for i in range(30):
+        time.sleep(0.5)
+        s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s2.settimeout(2)
+            s2.connect(("127.0.0.1", 2785))
+            s2.close()
+            logger.info("[WA] OpenWA avviato (PID %d)", proc.pid)
+            return
+        except:
+            pass
+        finally:
+            s2.close()
+    logger.warning("[WA] OpenWA non risponde dopo 15s (PID %d)", proc.pid)
+
 def _ensure_wa_webhook():
     """Registra il webhook su OpenWA se non già presente (es. dopo restart sessione)"""
     try:
@@ -2067,18 +2118,45 @@ def _process_wa_message(chat_id: str, msg_text: str, is_voice: bool = False):
     try:
         # Diamo contesto WhatsApp all'agente così sa di dover usare i tool WhatsApp
         wa_context = f"[WhatsApp - Gruppo Jarvis] {msg_text}"
-        reply = agent.chat(wa_context)
+        wa_extra = (
+            f"CONTESTO WHATSAPP:\n"
+            f"chat_id: {chat_id}\n"
+            f"ISTRUZIONI:\n"
+            f"- Sei su WhatsApp! NON usare markdown, grassetto, code block, elenchi puntati, o qualsiasi formattazione speciale\n"
+            f"- Rispondi in modo CONCISO (max 2-3 frasi) e in italiano chiaro\n"
+            f"- Vai dritto al punto, niente preamboli\n"
+            f"- Se l'utente chiede di mandare/inviare una foto/immagine, usa image_generate con prompt=DETTAGLIATO (copia TUTTA la descrizione dell'utente senza tagliare dettagli come colore, sfondo, azione, stile) e poi whatsapp_send_image con to=\"{chat_id}\"\n"
+            f"- Il destinatario per whatsapp_send_image è sempre {chat_id}\n"
+            f"- Non chiedere conferma, esegui direttamente\n"
+            f"- Non usare tool browser_navigate/browser_open — rispondi solo con testo\n"
+        )
+        reply = agent.chat(wa_context, extra_context=wa_extra, max_tokens=4096)
         if isinstance(reply, tuple):
             reply = reply[0]
+        # Safety net: se il modello restituisce JSON di tool call invece del testo
+        if isinstance(reply, str):
+            import re as _re_wa
+            _tool_json = _re_wa.search(r'\{"type":\s*"function",\s*"name":\s*"(\w+)"', reply)
+            if _tool_json:
+                tool_name = _tool_json.group(1)
+                try:
+                    _params = _re_wa.search(r'"parameters":\s*(\{.+\})', reply, _re_wa.DOTALL)
+                    if _params:
+                        from jarvis_tools import execute_tool as _exec
+                        _args = json.loads(_params.group(1))
+                        _res = _exec(tool_name, _args)
+                        reply = str(_res) if _res else f"✅ Eseguito {tool_name}"
+                except Exception:
+                    reply = reply[:500]
         reply_text = f"🤖 {reply.strip()}" if isinstance(reply, str) else f"🤖 {str(reply)}"
 
         if is_voice:
             try:
-                import edge_tts, tempfile, base64 as b64, subprocess as _sp
+                import edge_tts, tempfile, base64 as b64, subprocess as _sp, asyncio
                 tts = edge_tts.Communicate(reply_text[:500], voice="it-IT-ElsaNeural")
                 with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
                     tmp.close()
-                    tts.save(tmp.name)
+                    asyncio.run(tts.save(tmp.name))
                     mp3_path = tmp.name
                 # Converti MP3 → OGG/Opus per compatibilità WhatsApp
                 with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp2:
@@ -2224,11 +2302,11 @@ async def api_whatsapp_webhook(body: dict):
                 logger.info(f"[WA] Messaggio vuoto ignorato")
                 return {"ok": True, "action": "ignored_empty"}
 
-            # Solo risposte automatiche a: gruppo Jarvis OPPURE Marco
-            _marco_number = "393935434384"
+            # Solo risposte automatiche a: gruppo Jarvis OPPURE numeri autorizzati
+            _wa_authorized = {"393935434384", "491607804710"}
             _sender_digits = re.sub(r"\D", "", sender_name)
-            if _sender_digits != _marco_number and not is_group and chat_id != jarvis_group_id:
-                logger.info(f"[WA] Ignorato: {sender_name} (non gruppo Jarvis né Marco)")
+            if _sender_digits not in _wa_authorized and not is_group and chat_id != jarvis_group_id:
+                logger.info(f"[WA] Ignorato: {sender_name} (non autorizzato)")
                 return {"ok": True, "action": "ignored_not_authorized"}
 
             # Blocklist: numeri bloccati (in formato @c.us o @lid)
@@ -2370,13 +2448,13 @@ if __name__ == "__main__":
     print("=" * 52)
     print(f"  URL   -> http://localhost:{PORT}")
     print(f"  DOCS  -> http://localhost:{PORT}/api/docs")
-    print(f"  LLM   -> {cfg['groq']['model']}")
+    print(f"  LLM   -> {cfg['groq']['model']} (IONOS Hub)")
     print(f"  TTS   -> Qwen3-TTS (MLX) + Edge")
     print(f"  Voce  -> {cfg['tts'].get('qwen3_voice', 'vivian')}")
     print(f"  Tool  -> {len(TOOLS_SCHEMA)} disponibili")
     print("-" * 52)
     if cfg["groq"]["api_key"] == "YOUR_GROQ_API_KEY_HERE":
-        print("  W  Groq API key mancante in config.json!")
+        print("  W  API key mancante in config.json!")
         print()
     print("  Ctrl+C per fermare")
     print("-" * 52)

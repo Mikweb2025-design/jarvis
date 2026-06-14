@@ -1,5 +1,5 @@
 """jarvis_whatsapp_openwa.py — WhatsApp integration via OpenWA (self-hosted API)"""
-import json, os, time, threading, requests, logging
+import json, os, time, threading, base64, re, requests, logging
 from pathlib import Path
 from typing import Optional
 
@@ -137,8 +137,76 @@ def send_message(to: str, text: str) -> dict:
 def send_image(to: str, image_url: str, caption: str = "") -> dict:
     sid = _sid()
     if not _wa_session_ready:
-        ensure_session()
+        es = ensure_session()
+        if not es["ok"]:
+            return es
+        if es.get("status") != "ready":
+            return {"ok": False, "error": f"Session not ready: {es.get('status')}"}
+        sid = es.get("session_id", sid)
     chat_id = to if "@" in to else f"{to}@c.us"
+
+    # OpenWA @IsUrl() rejects localhost — auto-convert to base64
+    is_local = "localhost" in image_url or "127.0.0.1" in image_url or image_url.startswith("/api/image")
+    if is_local:
+        image_data = None
+        ext = "png"
+        m = re.search(r"/api/image\?file=([^&\s]+)", image_url)
+        if m:
+            fname = m.group(1)
+            ext = fname.rsplit(".", 1)[-1] if "." in fname else "png"
+            for base_dir in [
+                Path(__file__).parent / "output",
+                Path(__file__).parent / "data" / "downloads",
+            ]:
+                fp = base_dir / fname
+                if fp.exists():
+                    image_data = fp.read_bytes()
+                    break
+        if image_data is None:
+            try:
+                fetch_urls = [image_url]
+                if image_url.startswith("/"):
+                    for _base in ["http://localhost:9999", "http://127.0.0.1:9999"]:
+                        fetch_urls.append(f"{_base}{image_url}")
+                for _fu in fetch_urls:
+                    resp = requests.get(_fu, timeout=15)
+                    if resp.ok:
+                        image_data = resp.content
+                        break
+            except Exception:
+                pass
+        if image_data:
+            b64 = base64.b64encode(image_data).decode()
+            if len(b64) > 80000:
+                try:
+                    from PIL import Image as _PIL
+                    import io
+                    img = _PIL.open(io.BytesIO(image_data))
+                    mime_ext = "jpeg"
+                    max_dim = 800
+                    for _ in range(5):
+                        w, h = img.size
+                        if max(w, h) > max_dim:
+                            scale = max_dim / max(w, h)
+                            img = img.resize((int(w * scale), int(h * scale)), _PIL.LANCZOS)
+                        buf = io.BytesIO()
+                        img = img.convert("RGB")
+                        img.save(buf, "JPEG", quality=75)
+                        b64 = base64.b64encode(buf.getvalue()).decode()
+                        if len(b64) <= 80000:
+                            break
+                        max_dim = int(max_dim * 0.7)
+                except Exception as e:
+                    logger.warning("[WA] Compression failed: %s", e)
+            mime_map = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif", "webp": "webp"}
+            mime_type = f"image/{mime_map.get(ext, 'png')}"
+            return _api_post(f"/api/sessions/{sid}/messages/send-image", {
+                "chatId": chat_id,
+                "base64": b64,
+                "mimetype": mime_type,
+                "caption": caption,
+            })
+        return {"ok": False, "error": f"Impossibile caricare l'immagine locale: {image_url[:100]}"}
     return _api_post(f"/api/sessions/{sid}/messages/send-image", {
         "chatId": chat_id,
         "url": image_url,
@@ -148,7 +216,12 @@ def send_image(to: str, image_url: str, caption: str = "") -> dict:
 def send_audio(to: str, audio_base64: str, mimetype: str = "audio/ogg") -> dict:
     sid = _sid()
     if not _wa_session_ready:
-        ensure_session()
+        es = ensure_session()
+        if not es["ok"]:
+            return es
+        if es.get("status") != "ready":
+            return {"ok": False, "error": f"Session not ready: {es.get('status')}"}
+        sid = es.get("session_id", sid)
     chat_id = to if "@" in to else f"{to}@c.us"
     ext = mimetype.split("/")[-1] if "/" in mimetype else "ogg"
     if ext == "mpeg": ext = "mp3"

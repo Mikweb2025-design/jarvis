@@ -62,13 +62,13 @@ DEFAULT_CONFIG = {
         "response_format": "mp3",
         "enabled": True,
         "qwen3_enabled": True,
-        "qwen3_model": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
+        "qwen3_model": "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
         "qwen3_voice": "vivian",
         "qwen3_language": "Italian",
-        "qwen3_instruct": "Clear, professional, slightly warm tone",
+        "qwen3_instruct": "Una voce femminile italiana chiara, con accento milanese naturale, calda e professionale",
         "qwen3_available_voices": ["serena", "vivian", "uncle_fu", "ryan", "aiden", "ono_anna", "sohee", "eric", "dylan"],
         "qwen3_languages": {
-            "italian": {"voice": "vivian", "language": "Italian", "instruct": "Clear, professional, slightly warm tone"},
+            "italian": {"voice": "vivian", "language": "Italian", "instruct": "Una voce femminile italiana chiara, con accento milanese naturale, calda e professionale"},
             "german": {"voice": "ryan", "language": "German", "instruct": "Clear, professional, slightly warm tone"}
         }
     },

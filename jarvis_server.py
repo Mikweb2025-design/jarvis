@@ -826,7 +826,7 @@ class H(BaseHTTPRequestHandler):
 
                     # Nessuna action diretta → chiamata LLM streaming
                     import requests as req_lib
-                    from jarvis_agent import GROQ_URL, SYSTEM_PROMPT
+                    from jarvis_agent import LLM_URL as GROQ_URL, SYSTEM_PROMPT
 
                     memory_context = memory.get_context_for_prompt(msg, max_items=3)
                     # RAG context
@@ -1054,7 +1054,7 @@ class H(BaseHTTPRequestHandler):
                     print(f"[TRANS] deep error: {_te}")
                 if not translated:
                     try:
-                        from jarvis_agent import GROQ_URL
+                        from jarvis_agent import LLM_URL as GROQ_URL
                         import requests as req_lib
                         payload = {"model": cfg["groq"]["model"], "messages": [
                             {"role":"system","content":f"Sei un traduttore professionista. Traduci il seguente testo da {source} a {target}. Restituisci SOLO la traduzione, nient'altro."},
