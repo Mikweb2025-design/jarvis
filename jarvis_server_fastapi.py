@@ -1011,6 +1011,29 @@ async def api_chat_voice(body: ChatVoiceRequest):
     if not msg:
         raise HTTPException(400, "Messaggio vuoto")
 
+    async def _tts_local(text, voice, speed=1.0):
+        text = text[:500]
+        if _tts_model is not None:
+            try:
+                lang_map = {"italian":"Italian","german":"German","english":"English","french":"French","spanish":"Spanish"}
+                lang = lang_map.get(body.language, "Italian")
+                data, ct, err = _qwen3_generate(text, voice, lang, use_fast=True)
+                if data is not None:
+                    return data, ct
+            except Exception as e:
+                print(f"[TTS voice] Qwen3 fallback: {e}")
+        import asyncio, edge_tts, tempfile
+        tts_v = VOICE_MAP.get(voice, "it-IT-ElsaNeural")
+        rate = f"+{int((speed-1)*100)}%"
+        comm = edge_tts.Communicate(text, tts_v, rate=rate)
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            p = f.name
+        await comm.save(p)
+        with open(p, "rb") as f:
+            data = f.read()
+        os.unlink(p)
+        return data, "audio/mpeg"
+
     async def event_stream():
         try:
             actions = agent._detect_direct_actions(msg)
@@ -1019,18 +1042,7 @@ async def api_chat_voice(body: ChatVoiceRequest):
                 speech = next((a[7:] for a in actions if a.startswith('SPEECH:')), None)
                 if speech:
                     try:
-                        import asyncio, edge_tts, tempfile
-                        tts_v = VOICE_MAP.get(body.voice, "it-IT-ElsaNeural")
-                        async def _qk():
-                            comm = edge_tts.Communicate(speech, tts_v)
-                            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                                p = f.name
-                            await comm.save(p)
-                            return p
-                        p = await _qk()
-                        with open(p, "rb") as f:
-                            aud = f.read()
-                        os.unlink(p)
+                        aud, ct = await _tts_local(speech, body.voice, body.speed)
                         yield f"data: {json.dumps({'type': 'audio_chunk', 'data': base64.b64encode(aud).decode(), 'format': 'mp3'})}\n\n"
                     except Exception as _e:
                         print(f"[TTS quick] {_e}")
@@ -1046,18 +1058,9 @@ async def api_chat_voice(body: ChatVoiceRequest):
             yield f"data: {json.dumps({'type': 'reply', 'data': reply, 'elapsed': elapsed, 'model': 'agentic'})}\n\n"
 
             if reply and not reply.startswith("[Errore"):
-                import asyncio, edge_tts, tempfile
-                tts_voice = VOICE_MAP.get(body.voice, "it-IT-ElsaNeural")
-                rate = f"+{int((body.speed-1)*100)}%"
                 try:
-                    comm = edge_tts.Communicate(reply[:500], tts_voice, rate=rate)
-                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                        p = f.name
-                    await comm.save(p)
-                    with open(p, "rb") as f:
-                        audio_data = f.read()
-                    os.unlink(p)
-                    yield f"data: {json.dumps({'type': 'audio_chunk', 'data': base64.b64encode(audio_data).decode(), 'format': 'mp3'})}\n\n"
+                    aud, ct = await _tts_local(reply, body.voice, body.speed)
+                    yield f"data: {json.dumps({'type': 'audio_chunk', 'data': base64.b64encode(aud).decode(), 'format': 'mp3'})}\n\n"
                 except Exception as e:
                     print(f"  [Voice TTS] Error: {e}")
 

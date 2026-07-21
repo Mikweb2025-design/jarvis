@@ -2500,6 +2500,20 @@ window.addEventListener('DOMContentLoaded',function(){
 });
 </script>
 
+<script>
+// ── 3D Avatar watchdog timer ──
+var _3dTimeout = setTimeout(function(){
+  var lo = document.getElementById('avatar3d-loading');
+  if(lo && lo.style.display !== 'none'){
+    lo.innerHTML = '3D AVATAR NON DISPONIBILE<br><span style="font-size:10px;opacity:0.6">usa fallback 2D</span>';
+    lo.style.color = '#888';
+    lo.style.textShadow = 'none';
+    var wg = document.getElementById('avatar-widget');
+    if(wg) wg.classList.remove('has-3d');
+  }
+}, 12000);
+</script>
+
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -2632,12 +2646,13 @@ function loadAvatar(){
         idleAction.play();
       }
 
-      const cnv = document.getElementById('avatar3d-canvas');
-      if(cnv) cnv.classList.add('ready');
-      const wg = document.getElementById('avatar-widget');
-      if(wg) wg.classList.add('has-3d');
-      const lo = document.getElementById('avatar3d-loading');
-      if(lo) lo.style.display='none';
+      if(typeof _3dTimeout !== 'undefined') clearTimeout(_3dTimeout);
+      const cnv2 = document.getElementById('avatar3d-canvas');
+      if(cnv2) cnv2.classList.add('ready');
+      const wg2 = document.getElementById('avatar-widget');
+      if(wg2) wg2.classList.add('has-3d');
+      const lo2 = document.getElementById('avatar3d-loading');
+      if(lo2) lo2.style.display='none';
 
       const info = `meshes=${meshes.length} face=${faceMesh?'YES':'NO'} morphs=${morphDict?Object.keys(morphDict).length:0} anims=${(gltf.animations||[]).length} headBone=${headBone?'YES':'NO'}`;
       console.log('[Avatar3D] loaded', info);
