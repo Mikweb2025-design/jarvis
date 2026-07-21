@@ -1,0 +1,26 @@
+<div class="panel-header">
+    <h3>🎯 GOALS & OKR</h3>
+    <span id="goals-count" style="font-size:9px;font-family:var(--fm);color:var(--tx3)"></span>
+    <button onclick="closeGoals()">✕</button>
+  </div>
+  <div id="goals-toolbar" style="padding:6px 12px;display:flex;gap:6px;border-bottom:1px solid var(--n3)">
+    <input id="goals-title-input" placeholder="nuovo goal..." style="flex:1;background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 8px;font-size:10px;border-radius:3px">
+    <input id="goals-desc-input" placeholder="descrizione..." style="flex:1;background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 8px;font-size:10px;border-radius:3px">
+    <button onclick="goalsCreate()" style="background:var(--cy2);color:#000;border:none;padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">+ CREA</button>
+  </div>
+  <div id="goals-content" style="padding:6px;overflow-y:auto;max-height:calc(85vh - 90px)"></div>
+<style>
+#goals-panel{position:fixed;top:60px;right:10px;width:500px;max-height:85vh;background:rgba(10,10,18,0.97);border:1px solid var(--cy2);border-radius:4px;display:none;z-index:1010;overflow:hidden;box-shadow:0 0 30px var(--cyg);backdrop-filter:blur(16px)}
+#goals-panel.open{display:flex;flex-direction:column}
+#goals-content{flex:1}
+.goal-card{padding:10px 12px;margin:4px 0;border:1px solid var(--n3);border-radius:4px;background:rgba(255,255,255,0.02)}
+.goal-card h4{color:var(--cy);font-size:11px;margin:0 0 4px}
+.goal-card .gdesc{color:var(--tx2);font-size:9px;margin-bottom:6px}
+.goal-progress{height:4px;background:var(--n3);border-radius:2px;margin:4px 0;overflow:hidden}
+.goal-progress-fill{height:100%;background:linear-gradient(90deg,var(--cy2),var(--pp));border-radius:2px;transition:width 0.4s}
+.goal-kr-item{padding:4px 8px;margin:2px 0;font-size:9px;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.02);border-radius:3px}
+.goal-kr-item.crossed{text-decoration:line-through;color:var(--tx3);opacity:0.6}
+.goal-actions{display:flex;gap:6px;margin-top:6px}
+.goal-actions button{background:var(--n2);border:1px solid var(--n3);color:var(--tx2);padding:3px 8px;border-radius:3px;font-size:8px;cursor:pointer}
+</style>
+

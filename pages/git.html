@@ -1,0 +1,23 @@
+<div class="panel-header">
+    <h3>⎇ GIT</h3>
+    <span id="git-branch-label" style="font-size:9px;font-family:var(--fm);color:var(--tx3)"></span>
+    <button onclick="closeGit()">✕</button>
+  </div>
+  <div id="git-toolbar" style="padding:6px 12px;display:flex;gap:6px;border-bottom:1px solid var(--n3)">
+    <button onclick="gitStatus()" style="background:var(--cy2);color:#000;border:none;padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">⟳ STATUS</button>
+    <button onclick="gitLog()" style="background:var(--n2);border:1px solid var(--n3);color:var(--tx2);padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">📜 LOG</button>
+    <button onclick="gitBranches()" style="background:var(--n2);border:1px solid var(--n3);color:var(--tx2);padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">🌿 BRANCH</button>
+    <button onclick="gitDiff()" style="background:var(--n2);border:1px solid var(--n3);color:var(--tx2);padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">≠ DIFF</button>
+    <button onclick="gitCommit()" style="background:var(--n2);border:1px solid var(--pp);color:var(--pp);padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">✅ COMMIT</button>
+  </div>
+  <div id="git-content" style="padding:6px;overflow-y:auto;max-height:calc(85vh - 90px);font-size:10px;font-family:var(--fm);line-height:1.5"></div>
+<style>
+#git-panel{position:fixed;top:120px;left:10px;width:600px;max-height:85vh;background:rgba(10,10,18,0.97);border:1px solid var(--pp);border-radius:4px;display:none;z-index:1010;overflow:hidden;box-shadow:0 0 30px rgba(170,0,255,0.3);backdrop-filter:blur(16px)}
+#git-panel.open{display:flex;flex-direction:column}
+#git-content{flex:1;min-height:200px}
+#git-content .staged{color:#0f0}
+#git-content .modified{color:#ff0}
+#git-content .untracked{color:#f44}
+#git-content .branch-active{color:var(--cy);font-weight:bold}
+</style>
+

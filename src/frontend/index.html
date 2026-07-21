@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S — CYBERPUNK HUD v12.0</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<link rel="stylesheet" href="/assets/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/assets/three.module.js",
+    "three/addons/": "/assets/"
+  }
+}
+</script>
+  <script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+
+<div id="scanlines"></div>
+<div id="noise"></div>
+<div id="glitch-overlay"></div>
+<div id="holo-overlay"></div>
+<div id="tier-indicator"></div>
+
+<div id="mem-panel"></div>
+<div id="rag-panel"></div>
+<div id="trends-panel"></div>
+<div id="worldnews-panel"></div>
+<div id="git-panel"></div>
+<div id="goals-panel"></div>
+<div id="settings-panel"></div>
+<div id="vision-panel"></div>
+<div id="presentation-panel"></div>
+<div id="imagegen-panel"></div>
+<div id="musicgen-panel"></div>
+<div id="knowledgegraph-panel"></div>
+
+<div id="particles"></div>
+
+<div id="boot">
+  <div class="boot-glitch">J.A.R.V.I.S</div>
+  <div class="boot-sub">SYSTEM v12.0 // CYBERPUNK HUD</div>
+  <div class="boot-bar"><div class="boot-fill" id="boot-fill"></div></div>
+  <div class="boot-log" id="boot-log">
+    <div class="boot-line">> INITIALIZING CORE SYSTEMS...</div>
+    <div class="boot-line">> LOADING NEURAL INTERFACE...</div>
+    <div class="boot-line">> CALIBRATING HOLOGRAPHIC DISPLAY...</div>
+    <div class="boot-line">> ESTABLISHING SECURE CONNECTION...</div>
+    <div class="boot-line">> SYSTEM READY</div>
+  </div>
+  <div class="boot-cursor">_</div>
+</div>
+
+<div class="bg-grid"></div>
+<div class="bg-vignette"></div>
+
+<div id="topbar">
+  <span class="brand">J.A.R.V.I.S</span>
+  <span class="sep">//</span>
+  <span class="stat"><span class="dot online" id="status-dot"></span><span id="status-text">ONLINE</span></span>
+  <span class="stat">&#9889;<span id="top-model">llama-3.3-70b</span></span>
+  <span class="stat" id="wake-indicator" style="cursor:pointer;opacity:0.5">&#127908;<span style="font-size:10px;margin-left:2px">OFF</span></span>
+  <nav id="top-nav">
+    <a class="nav-link active" href="#chat" data-page-link="chat">CONSOLE</a>
+    <a class="nav-link" href="#memory" data-page-link="memory">MEMORIA</a>
+    <a class="nav-link" href="#rag" data-page-link="rag">RAG</a>
+    <a class="nav-link" href="#trends" data-page-link="trends">TRENDS</a>
+    <a class="nav-link" href="#worldnews" data-page-link="worldnews">&#127758; MONDO</a>
+    <a class="nav-link" href="#git" data-page-link="git">&#8995; GIT</a>
+    <a class="nav-link" href="#goals" data-page-link="goals">&#127919; OKR</a>
+    <a class="nav-link" href="#vision" data-page-link="vision">&#128073;&#65039; VISION</a>
+    <a class="nav-link" href="#presentation" data-page-link="presentation">&#128202; SLIDE</a>
+    <a class="nav-link" href="#imagegen" data-page-link="imagegen">&#127912; IMG</a>
+    <a class="nav-link" href="#musicgen" data-page-link="musicgen">&#127925; MUSIC</a>
+    <a class="nav-link" href="#knowledgegraph" data-page-link="knowledgegraph">&#128279; GRAPH</a>
+    <a class="nav-link" href="#settings" data-page-link="settings">&#9881;</a>
+  </nav>
+  <div class="right">
+    <span id="top-time"></span>
+    <span>|</span>
+    <span id="latbar">LAT 0s</span>
+  </div>
+</div>
+
+<div id="mob-bar" style="display:none">
+  <span class="dot online" id="mob-status-dot"></span>
+  <span id="mob-model">llama-3.3-70b</span>
+  <span id="mob-time"></span>
+  <span id="mob-wake-indicator" style="font-size:12px;opacity:0.5">&#127908;</span>
+  <button id="mob-actions-btn">&#9889;</button>
+</div>
+
+<div id="hud">
+  <div id="left"></div>
+  <div id="center"></div>
+  <div id="right"></div>
+</div>
+
+<div id="webcam-widget" class="hidden">
+  <div id="webcam-header">
+    <span id="webcam-title">&#128225; WEBCAM</span>
+    <button id="webcam-close">&#10005;</button>
+  </div>
+  <div id="webcam-body">
+    <div id="webcam-iframe" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></div>
+  </div>
+  <div id="webcam-footer">
+    <span id="webcam-city">--</span>
+    <span id="webcam-status">&#9679; LIVE</span>
+  </div>
+</div>
+
+<div id="webcam-grid-widget" class="hidden">
+  <div id="webcam-grid-header">
+    <span>&#128640; SATELLITE MONDO</span>
+    <button id="webcam-grid-close">&#10005;</button>
+  </div>
+  <div id="webcam-grid-body"></div>
+</div>
+
+<div id="ha-widget" class="hidden">
+  <div id="ha-widget-header">
+    <span>&#127968; HOME ASSISTANT</span>
+    <button id="ha-widget-close">&#10005;</button>
+  </div>
+  <div id="ha-widget-body">
+    <iframe id="ha-widget-iframe" src="" allow="autoplay; encrypted-media"></iframe>
+  </div>
+</div>
+
+<div id="bottombar">
+  <span>JARVIS v12.0 // CYBERPUNK // FASTAPI // TYPESCRIPT // 180+ TOOLS</span>
+  <span>MAC MINI M2 PRO</span>
+</div>
+
+<div id="mob-backdrop"></div>
+<div id="mob-drawer">
+  <div id="mob-drawer-header">
+    <span>&#10022; QUICK ACTIONS</span>
+    <button id="mob-drawer-close">&#10005;</button>
+  </div>
+  <div id="mob-drawer-body"></div>
+</div>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>

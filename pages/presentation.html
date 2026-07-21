@@ -1,0 +1,375 @@
+<div id="pres-panel">
+  <div id="pres-header">
+    <h3>📊 PRESENTATION CREATOR</h3>
+    <span id="pres-status" style="font-size:9px;color:var(--tx3);flex:1"></span>
+    <button onclick="closePresentation()">✕</button>
+  </div>
+    <div id="pres-body">
+    <div id="pres-sidebar">
+      <div class="pres-section">
+        <label>🎯 Prompt — descrivi cosa vuoi</label>
+        <textarea id="pres-prompt" class="pres-ta" placeholder="Es: Fammi una presentazione su come è difficile vivere a Berlino — costo della vita, burocrazia, clima, lingua" rows="4"></textarea>
+        <button id="pres-auto-btn" onclick="presAutoGenerate()" class="pres-btn-primary" style="margin-top:4px;background:var(--pp);color:#fff">🤖 GENERA AUTOMATICO</button>
+      </div>
+      <hr style="border-color:var(--n3);margin:8px 0">
+      <div class="pres-section">
+        <label>Titolo</label>
+        <input id="pres-title" class="pres-inp" placeholder="Titolo presentazione" value="Report">
+      </div>
+      <div class="pres-section">
+        <label>Tema (Presenton)</label>
+        <select id="pres-theme" class="pres-inp">
+          <option value="corporate">Corporate (blu)</option>
+          <option value="dark">Dark (rosa/ciano)</option>
+          <option value="nature">Natura (verde)</option>
+          <option value="sunset">Tramonto (arancione)</option>
+          <option value="ocean">Oceano (azzurro)</option>
+          <option value="midnight">Midnight (scuro)</option>
+        </select>
+      </div>
+      <div class="pres-section">
+        <label>Formato</label>
+        <select id="pres-format" class="pres-inp">
+          <option value="html">🌐 HTML Presenton</option>
+          <option value="pptx">📊 PowerPoint (PPTX)</option>
+          <option value="html_legacy">🌐 HTML legacy</option>
+        </select>
+      </div>
+      <div class="pres-section">
+        <label>Autore</label>
+        <input id="pres-author" class="pres-inp" placeholder="Autore" value="J.A.R.V.I.S">
+      </div>
+      <div class="pres-section">
+        <label>Tono</label>
+        <select id="pres-tone" class="pres-inp">
+          <option value="default">Default</option>
+          <option value="professional">Professionale</option>
+          <option value="casual">Informale</option>
+          <option value="educational">Educativo</option>
+          <option value="funny">Divertente</option>
+          <option value="sales_pitch">Vendita</option>
+        </select>
+      </div>
+      <div class="pres-section">
+        <label>Lingua</label>
+        <input id="pres-language" class="pres-inp" placeholder="Lingua" value="Italian">
+      </div>
+      <div class="pres-section">
+        <label>Numero slide</label>
+        <input id="pres-n-slides" class="pres-inp" type="number" min="4" max="20" value="8">
+      </div>
+      <div class="pres-section">
+        <label>Istruzioni extra</label>
+        <textarea id="pres-instructions" class="pres-ta" placeholder="Istruzioni aggiuntive per l'AI..." rows="2"></textarea>
+      </div>
+      <hr style="border-color:var(--n3);margin:8px 0">
+      <div style="font-size:9px;color:var(--tx2);margin-bottom:6px">SLIDE <span id="pres-slide-count">0</span></div>
+      <div id="pres-slide-list"></div>
+      <button id="pres-add-slide" onclick="presAddSlide()" style="width:100%;margin-top:6px">+ AGGIUNGI SLIDE</button>
+      <hr style="border-color:var(--n3);margin:8px 0">
+      <button id="pres-generate-btn" onclick="presGenerate()" class="pres-btn-primary">🚀 GENERA PRESENTAZIONE</button>
+      <div id="pres-output" style="margin-top:8px"></div>
+    </div>
+    <div id="pres-editor">
+      <div id="pres-slide-editor" style="display:none">
+        <div class="pres-section">
+          <label>Tipo slide</label>
+          <select id="pres-slide-type" class="pres-inp" onchange="presSlideTypeChanged()">
+            <option value="title">Titolo</option>
+            <option value="section">Sezione</option>
+            <option value="content">Contenuto</option>
+            <option value="two_column">Due colonne</option>
+            <option value="table">Tabella</option>
+            <option value="chart">Grafico</option>
+            <option value="image">Immagine</option>
+            <option value="thank_you">Ringraziamenti</option>
+          </select>
+        </div>
+        <div class="pres-section">
+          <label>Titolo slide</label>
+          <input id="pres-slide-title" class="pres-inp" placeholder="Titolo slide">
+        </div>
+        <div class="pres-section" id="pres-field-subtitle">
+          <label>Sottotitolo</label>
+          <input id="pres-slide-subtitle" class="pres-inp" placeholder="Sottotitolo">
+        </div>
+        <div class="pres-section" id="pres-field-content">
+          <label>Contenuto (testo o bullets, uno per riga)</label>
+          <textarea id="pres-slide-content" class="pres-ta" placeholder="Inserisci testo o items (uno per riga)" rows="6"></textarea>
+        </div>
+        <div class="pres-section" id="pres-field-cols" style="display:none">
+          <label>Colonna 1 (items uno per riga)</label>
+          <textarea id="pres-col1" class="pres-ta" placeholder="Items colonna 1" rows="4"></textarea>
+          <label style="margin-top:6px">Colonna 2 (items uno per riga)</label>
+          <textarea id="pres-col2" class="pres-ta" placeholder="Items colonna 2" rows="4"></textarea>
+        </div>
+        <div class="pres-section" id="pres-field-table" style="display:none">
+          <label>Intestazioni tabella (separate da virgola)</label>
+          <input id="pres-tbl-headers" class="pres-inp" placeholder="Mese, Nord, Sud, Centro">
+          <label style="margin-top:6px">Righe tabella (una per riga, valori separati da virgola)</label>
+          <textarea id="pres-tbl-rows" class="pres-ta" placeholder="Gen,120,85,95" rows="5"></textarea>
+        </div>
+        <div class="pres-section" id="pres-field-chart" style="display:none">
+          <label>Tipo grafico</label>
+          <select id="pres-chart-type" class="pres-inp">
+            <option value="bar">Barre</option>
+            <option value="line">Linee</option>
+            <option value="pie">Torta</option>
+            <option value="area">Area</option>
+          </select>
+          <label style="margin-top:6px">Intestazioni (separate da virgola, prima=etichette)</label>
+          <input id="pres-chart-headers" class="pres-inp" placeholder="Mese, Serie1, Serie2">
+          <label style="margin-top:6px">Dati (una riga per categoria, valori separati da virgola)</label>
+          <textarea id="pres-chart-rows" class="pres-ta" placeholder="Gen,120,85" rows="5"></textarea>
+        </div>
+        <div class="pres-section" id="pres-field-img" style="display:none">
+          <label>URL immagine</label>
+          <input id="pres-img-src" class="pres-inp" placeholder="https://...">
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button onclick="presSaveSlide()" class="pres-btn-primary">💾 SALVA SLIDE</button>
+          <button onclick="presCancelEdit()" style="background:var(--n2);border:1px solid var(--n3);color:var(--tx2);padding:6px 12px;border-radius:3px;font-size:10px;cursor:pointer">ANNULLA</button>
+        </div>
+      </div>
+      <div id="pres-no-slide" style="color:var(--tx3);font-size:11px;padding:40px;text-align:center">
+        Seleziona o crea una slide per modificarla
+      </div>
+    </div>
+  </div>
+</div>
+<div id="pres-preview-overlay" class="hidden" onclick="closePresPreview()">
+  <iframe id="pres-preview-frame"></iframe>
+</div>
+<style>
+#pres-panel{position:fixed;top:50px;left:10px;right:10px;bottom:10px;background:rgba(10,10,18,0.97);border:1px solid var(--cy2);border-radius:4px;display:none;z-index:1000;overflow:hidden;box-shadow:0 0 30px var(--cyg);backdrop-filter:blur(16px);flex-direction:column}
+#pres-panel.open{display:flex}
+#pres-header{display:flex;align-items:center;padding:8px 12px;background:rgba(0,240,255,0.05);border-bottom:1px solid var(--cy2);gap:8px;flex-shrink:0}
+#pres-header h3{font-family:var(--fd);font-size:11px;color:var(--cy);letter-spacing:0.15em;margin:0;flex:1}
+#pres-header button{background:none;border:none;color:var(--tx3);font-size:16px;cursor:pointer;padding:0 4px}
+#pres-header button:hover{color:var(--pk)}
+#pres-body{display:flex;flex:1;overflow:hidden}
+#pres-sidebar{width:300px;border-right:1px solid var(--n3);padding:10px;overflow-y:auto;flex-shrink:0}
+#pres-editor{flex:1;padding:10px;overflow-y:auto}
+.pres-section{margin-bottom:8px}
+.pres-section label{display:block;font-size:9px;color:var(--tx2);margin-bottom:3px;font-family:var(--fm)}
+.pres-inp{width:100%;padding:6px 8px;background:var(--n2);border:1px solid var(--n3);color:var(--tx);border-radius:3px;font-size:10px;font-family:var(--fm)}
+.pres-ta{width:100%;padding:6px 8px;background:var(--n2);border:1px solid var(--n3);color:var(--tx);border-radius:3px;font-size:10px;font-family:var(--fm);resize:vertical}
+.pres-btn-primary{width:100%;padding:8px;background:var(--cy2);color:#000;border:none;border-radius:3px;font-weight:bold;font-size:10px;cursor:pointer;font-family:var(--fd);letter-spacing:0.1em}
+.pres-btn-primary:hover{background:var(--cy)}
+.pres-slide-item{display:flex;align-items:center;padding:6px 8px;margin:2px 0;background:var(--n2);border:1px solid var(--n3);border-radius:3px;cursor:pointer;font-size:9px;gap:6px}
+.pres-slide-item:hover{border-color:var(--cy2)}
+.pres-slide-item.active{border-color:var(--cy);background:rgba(0,240,255,0.08)}
+.pres-slide-item .s-type{color:var(--cy);font-size:7px;font-family:var(--fm);background:var(--n3);padding:2px 4px;border-radius:2px}
+.pres-slide-item .s-title{flex:1;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pres-slide-item .s-del{background:none;border:none;color:var(--tx3);cursor:pointer;font-size:10px;padding:0 2px}
+.pres-slide-item .s-del:hover{color:#f44}
+#pres-preview-overlay{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center}
+#pres-preview-overlay.hidden{display:none}
+#pres-preview-frame{width:90vw;height:90vh;border:none;border-radius:8px;background:#fff}
+</style>
+<script>
+var PRES_SLIDES = [];
+var PRES_EDIT_IDX = -1;
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function showPresMsg(msg,type){var e=document.getElementById('pres-output');if(!e)return;e.innerHTML='<div style="padding:8px;font-size:10px;'+(type==='warn'?'color:var(--am)':'color:var(--cy)')+'">'+esc(msg)+'</div>';setTimeout(function(){e.innerHTML=''},3000)}
+
+function openPresentation(){
+  document.getElementById('pres-panel').classList.add('open');
+  presRenderList();
+}
+function closePresentation(){
+  document.getElementById('pres-panel').classList.remove('open');
+  document.getElementById('pres-preview-overlay').classList.add('hidden');
+}
+
+function presRenderList(){
+  var el = document.getElementById('pres-slide-list');
+  document.getElementById('pres-slide-count').textContent = PRES_SLIDES.length;
+  if(PRES_SLIDES.length === 0){
+    el.innerHTML = '<div style="color:var(--tx3);font-size:9px;padding:8px;text-align:center">Nessuna slide — premi "+ AGGIUNGI SLIDE"</div>';
+    return;
+  }
+  el.innerHTML = PRES_SLIDES.map(function(s,i){
+    var active = i === PRES_EDIT_IDX ? ' active' : '';
+    return '<div class="pres-slide-item'+active+'" onclick="presEditSlide('+i+')">'+
+      '<span class="s-type">'+s.type+'</span>'+
+      '<span class="s-title">'+(s.title||'Slide '+(i+1))+'</span>'+
+      '<button class="s-del" onclick="event.stopPropagation();presDelSlide('+i+')">✕</button></div>';
+  }).join('');
+}
+
+function presAddSlide(){
+  PRES_SLIDES.push({type:'content',title:'Nuova Slide',subtitle:'',content:'',items:[],cols:[],
+    headers:[],rows:[],chart_type:'bar',image:''});
+  PRES_EDIT_IDX = PRES_SLIDES.length - 1;
+  presRenderList();
+  presOpenEditor();
+}
+
+function presDelSlide(i){
+  PRES_SLIDES.splice(i,1);
+  if(PRES_EDIT_IDX >= PRES_SLIDES.length) PRES_EDIT_IDX = PRES_SLIDES.length - 1;
+  if(PRES_SLIDES.length === 0){ PRES_EDIT_IDX = -1; document.getElementById('pres-slide-editor').style.display='none'; document.getElementById('pres-no-slide').style.display='block'; }
+  presRenderList();
+}
+
+function presEditSlide(i){
+  PRES_EDIT_IDX = i;
+  presRenderList();
+  presOpenEditor();
+}
+
+function presCancelEdit(){
+  PRES_EDIT_IDX = -1;
+  presRenderList();
+  document.getElementById('pres-slide-editor').style.display='none';
+  document.getElementById('pres-no-slide').style.display='block';
+}
+
+function presOpenEditor(){
+  document.getElementById('pres-no-slide').style.display='none';
+  document.getElementById('pres-slide-editor').style.display='block';
+  var s = PRES_SLIDES[PRES_EDIT_IDX];
+  if(!s) return;
+  document.getElementById('pres-slide-type').value = s.type||'content';
+  document.getElementById('pres-slide-title').value = s.title||'';
+  document.getElementById('pres-slide-subtitle').value = s.subtitle||'';
+  var content = Array.isArray(s.items) ? s.items.join('\n') : (s.content||'');
+  document.getElementById('pres-slide-content').value = content;
+  document.getElementById('pres-col1').value = (s.cols&&s.cols[0]?s.cols[0].join('\n'):'');
+  document.getElementById('pres-col2').value = (s.cols&&s.cols[1]?s.cols[1].join('\n'):'');
+  document.getElementById('pres-tbl-headers').value = (s.headers||[]).join(', ');
+  document.getElementById('pres-tbl-rows').value = (s.rows||[]).map(function(r){return r.join(', ')}).join('\n');
+  document.getElementById('pres-chart-type').value = s.chart_type||'bar';
+  document.getElementById('pres-chart-headers').value = (s.chart_headers||s.headers||[]).join(', ');
+  document.getElementById('pres-chart-rows').value = (s.chart_rows||s.rows||[]).map(function(r){return r.join(', ')}).join('\n');
+  document.getElementById('pres-img-src').value = s.image||'';
+  presSlideTypeChanged();
+}
+
+function presSlideTypeChanged(){
+  var t = document.getElementById('pres-slide-type').value;
+  ['pres-field-subtitle','pres-field-content','pres-field-cols','pres-field-table','pres-field-chart','pres-field-img'].forEach(function(id){
+    document.getElementById(id).style.display = 'none';
+  });
+  if(t === 'title'||t === 'section'||t === 'thank_you') document.getElementById('pres-field-subtitle').style.display = 'block';
+  if(t === 'content'||t === 'title'||t === 'section') document.getElementById('pres-field-content').style.display = 'block';
+  if(t === 'two_column') document.getElementById('pres-field-cols').style.display = 'block';
+  if(t === 'table') document.getElementById('pres-field-table').style.display = 'block';
+  if(t === 'chart') document.getElementById('pres-field-chart').style.display = 'block';
+  if(t === 'image') document.getElementById('pres-field-img').style.display = 'block';
+}
+
+function presSaveSlide(){
+  var i = PRES_EDIT_IDX;
+  if(i < 0) return;
+  var s = PRES_SLIDES[i];
+  s.type = document.getElementById('pres-slide-type').value;
+  s.title = document.getElementById('pres-slide-title').value;
+  s.subtitle = document.getElementById('pres-slide-subtitle').value;
+  var raw = document.getElementById('pres-slide-content').value;
+  if(s.type === 'content'){ s.items = raw.split('\n').filter(Boolean); s.content = ''; }
+  else { s.content = raw; s.items = []; }
+  s.cols = [
+    document.getElementById('pres-col1').value.split('\n').filter(Boolean),
+    document.getElementById('pres-col2').value.split('\n').filter(Boolean)
+  ];
+  s.headers = document.getElementById('pres-tbl-headers').value.split(',').map(function(x){return x.trim()}).filter(Boolean);
+  s.rows = document.getElementById('pres-tbl-rows').value.split('\n').filter(Boolean).map(function(l){return l.split(',').map(function(x){return x.trim()})});
+  s.chart_type = document.getElementById('pres-chart-type').value;
+  s.chart_headers = document.getElementById('pres-chart-headers').value.split(',').map(function(x){return x.trim()}).filter(Boolean);
+  s.chart_rows = document.getElementById('pres-chart-rows').value.split('\n').filter(Boolean).map(function(l){return l.split(',').map(function(x){return x.trim()})});
+  s.image = document.getElementById('pres-img-src').value;
+  presRenderList();
+}
+
+async function presGenerate(){
+  var btn = document.getElementById('pres-generate-btn');
+  var out = document.getElementById('pres-output');
+  btn.disabled = true; btn.textContent = '⏳ GENERAZIONE...';
+  out.innerHTML = '';
+  presSaveSlide();
+
+  var title = document.getElementById('pres-title').value;
+  var theme = document.getElementById('pres-theme').value;
+  var author = document.getElementById('pres-author').value;
+  var format = document.getElementById('pres-format').value;
+
+  var ep = '/api/presentation/create';
+  var data = { title: title, theme: theme, author: author, slides: PRES_SLIDES };
+  if(format === 'pptx') data.pptx = true;
+  if(format === 'html') data.presenton = true;
+
+  try {
+    var r = await fetch(ep, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    var d = await r.json();
+    if(d.error){ out.innerHTML = '<div style="color:#f44;font-size:10px">❌ '+esc(d.error)+'</div>'; return; }
+    var url = d.url || '';
+    var encUrl = encodeURI(url);
+    out.innerHTML = '<div style="color:var(--gr);font-size:10px">✅ '+esc(format==='pptx'?'PPTX':'HTML')+' creata!</div>'+
+      '<div style="margin-top:6px;display:flex;gap:6px">'+
+      '<button onclick="presPreview(\''+encUrl.replace(/'/g,"\\'")+'\')" class="pres-btn-primary" style="font-size:9px">👁 ANTEPRIMA</button>'+
+      '<a href="'+encUrl.replace(/'/g,"\\'")+'" download style="flex:1"><button class="pres-btn-primary" style="font-size:9px">⬇ SCARICA</button></a></div>';
+  } catch(e){
+    out.innerHTML = '<div style="color:#f44;font-size:10px">❌ '+esc(e.message)+'</div>';
+  } finally {
+    btn.disabled = false; btn.textContent = '🚀 GENERA PRESENTAZIONE';
+  }
+}
+
+async function presAutoGenerate(){
+  var btn = document.getElementById('pres-auto-btn');
+  var prompt = document.getElementById('pres-prompt').value.trim();
+  if(!prompt){ showPresMsg('Inserisci un prompt per generare la presentazione','warn'); return; }
+  btn.disabled = true; btn.textContent = '⏳ GENERAZIONE...';
+  var out = document.getElementById('pres-output');
+  out.innerHTML = '<div style="color:var(--cy);font-size:10px">⏳ Generazione presentazione in corso...</div>';
+  try {
+    var fmt = document.getElementById('pres-format').value;
+    var apiFmt = fmt === 'html_legacy' ? 'html' : fmt;
+    var r = await fetch('/api/presentation/auto', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        prompt: prompt,
+        title: document.getElementById('pres-title').value,
+        theme: document.getElementById('pres-theme').value,
+        author: document.getElementById('pres-author').value,
+        format: apiFmt,
+        tone: document.getElementById('pres-tone').value,
+        language: document.getElementById('pres-language').value,
+        n_slides: parseInt(document.getElementById('pres-n-slides').value) || 8,
+        instructions: document.getElementById('pres-instructions').value,
+        presenton: fmt !== 'html_legacy'
+      })
+    });
+    var d = await r.json();
+    if(d.error){ out.innerHTML = '<div style="color:#f44;font-size:10px">❌ '+esc(d.error)+'</div>'; return; }
+    if(d.slides && Array.isArray(d.slides)){
+      PRES_SLIDES = d.slides;
+      PRES_EDIT_IDX = -1;
+      presRenderList();
+      document.getElementById('pres-slide-editor').style.display='none';
+      document.getElementById('pres-no-slide').style.display='block';
+    }
+    var url = d.url || '';
+    var encUrl = encodeURI(url);
+    out.innerHTML = '<div style="color:var(--gr);font-size:10px">✅ Presentazione creata!</div>'+
+      '<div style="margin-top:6px;display:flex;gap:6px">'+
+      '<button onclick="presPreview(\''+encUrl.replace(/'/g,"\\'")+'\')" class="pres-btn-primary" style="font-size:9px">👁 ANTEPRIMA</button>'+
+      '<a href="'+encUrl.replace(/'/g,"\\'")+'" download style="flex:1"><button class="pres-btn-primary" style="font-size:9px">⬇ SCARICA</button></a></div>';
+  } catch(e){
+    out.innerHTML = '<div style="color:#f44;font-size:10px">❌ '+e.message+'</div>';
+  } finally {
+    btn.disabled = false; btn.textContent = '🤖 GENERA AUTOMATICO';
+  }
+}
+
+function presPreview(url){
+  document.getElementById('pres-preview-frame').src = url;
+  document.getElementById('pres-preview-overlay').classList.remove('hidden');
+}
+function closePresPreview(){
+  document.getElementById('pres-preview-overlay').classList.add('hidden');
+  document.getElementById('pres-preview-frame').src = '';
+}
+</script>

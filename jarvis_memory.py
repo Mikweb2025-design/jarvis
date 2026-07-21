@@ -11,7 +11,14 @@ class JarvisMemory:
         DB_PATH.parent.mkdir(exist_ok=True)
         self.db = sqlite3.connect(str(DB_PATH), check_same_thread=False)
         self.db.row_factory = sqlite3.Row
+        self._commit_counter = 0
         self._init()
+        self.db.execute("PRAGMA wal_autocheckpoint=1000")
+        self.db.execute("PRAGMA synchronous=NORMAL")
+        try:
+            self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except:
+            pass
 
     def _init(self):
         c = self.db.cursor()
@@ -54,7 +61,9 @@ class JarvisMemory:
         c = self.db.cursor()
         c.execute("INSERT INTO memories (category, content, tags, importance) VALUES (?,?,?,?)",
                   (category, content, tags, importance))
-        self.db.commit()
+        self._commit_counter += 1
+        if self._commit_counter % 10 == 0:
+            self.db.commit()
         return f"Ricordato: {content[:60]}..." if len(content) > 60 else f"Ricordato: {content}"
 
     def _escape_fts(self, query):
@@ -96,7 +105,9 @@ class JarvisMemory:
         c = self.db.cursor()
         c.execute("INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES (?, ?, datetime('now'))",
                   (key, json.dumps(value) if not isinstance(value, str) else value))
-        self.db.commit()
+        self._commit_counter += 1
+        if self._commit_counter % 10 == 0:
+            self.db.commit()
         return f"Preferenza salvata: {key} = {value}"
 
     def get_preference(self, key, default=None):
@@ -120,7 +131,9 @@ class JarvisMemory:
     def log_conversation(self, role, content):
         c = self.db.cursor()
         c.execute("INSERT INTO conversation_log (role, content) VALUES (?, ?)", (role, content))
-        self.db.commit()
+        self._commit_counter += 1
+        if self._commit_counter % 10 == 0:
+            self.db.commit()
 
     def get_recent_conversations(self, limit=20):
         c = self.db.cursor()
@@ -148,7 +161,11 @@ class JarvisMemory:
         convos = c.fetchone()["total"]
         return {"total_memories": total, "by_category": by_cat, "conversation_entries": convos}
 
+    def flush(self):
+        self.db.commit()
+
     def close(self):
+        self.flush()
         self.db.close()
 
 

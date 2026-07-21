@@ -5,6 +5,7 @@ import os
 import json
 import math
 from pathlib import Path
+import jarvis_musicgen
 
 BASE = Path(__file__).parent
 AVATAR_PATH = str(BASE / "holographic_avatar.png")
@@ -146,6 +147,19 @@ def main():
     num_frames = fps * duration_sec
 
     envelope, audio_dur = extract_audio_envelope(audio_path, num_frames)
+
+    print("Generating background music...")
+    music_result = jarvis_musicgen.generate_music(
+        "Cinematic background music for AI avatar video, subtle and atmospheric",
+        duration=int(audio_dur) + 1,
+        genre="cinematic"
+    )
+    music_path = music_result.get("local_path") or music_result.get("fallback", {}).get("local_path")
+    if music_path and os.path.exists(music_path):
+        print(f"Background music generated: {music_path}")
+    else:
+        print("Background music not available, proceeding without it")
+        music_path = None
 
     os.makedirs(FRAMES_DIR, exist_ok=True)
 

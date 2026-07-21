@@ -1,0 +1,128 @@
+<div id="skills-panel">
+  <div id="skills-panel-header">
+    <h3>🧠 SELF-LEARNING SKILLS</h3>
+    <span id="skills-count-label"></span>
+    <button id="skills-close" onclick="closeSkills()">✕</button>
+  </div>
+  <div id="skills-stats" style="padding:8px;font-size:9px;color:var(--tx2);border-bottom:1px solid var(--n3)"></div>
+  <div id="skills-create-wrap" style="padding:10px;display:flex;gap:8px;border-bottom:1px solid var(--n3)">
+    <input id="skills-name-input" placeholder="nome skill (snake_case)" style="flex:0 0 120px;background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:6px 8px;font-size:10px;border-radius:3px">
+    <input id="skills-desc-input" placeholder="cosa deve fare? descrivi in italiano..." style="flex:1;background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:6px 8px;font-size:10px;border-radius:3px">
+    <button onclick="skillsCreate()" style="background:var(--cy2);color:#000;border:none;padding:6px 14px;border-radius:3px;font-weight:bold;font-size:10px;cursor:pointer">GENERA</button>
+  </div>
+  <div id="skills-list" style="padding:4px"></div>
+  <div id="skills-toast" style="display:none;position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(0,240,255,0.12);border:1px solid var(--cy);color:var(--cy);font-family:var(--fm);font-size:11px;padding:8px 18px;border-radius:4px;backdrop-filter:blur(10px);z-index:9999;animation:toastIn 0.25s ease"></div>
+</div>
+<style>
+#skills-panel{position:fixed;top:50px;left:10px;width:460px;max-height:85vh;background:rgba(10,10,18,0.97);border:1px solid var(--cy2);border-radius:4px;display:none;z-index:1000;overflow:auto;box-shadow:0 0 30px var(--cyg);backdrop-filter:blur(16px)}
+#skills-panel.open{display:block}
+#skills-panel-header{display:flex;align-items:center;padding:8px 12px;background:rgba(0,240,255,0.05);border-bottom:1px solid var(--cy2);gap:8px}
+#skills-panel-header h3{font-family:var(--fd);font-size:11px;color:var(--cy);letter-spacing:0.15em;margin:0;flex:1}
+#skills-panel-header #skills-count-label{font-family:var(--fm);font-size:9px;color:var(--tx3)}
+#skills-panel-header #skills-close{background:none;border:none;color:var(--tx3);font-size:16px;cursor:pointer;padding:0 4px}
+#skills-panel-header #skills-close:hover{color:var(--pk)}
+.skill-item{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:10px}
+.skill-item:hover{background:rgba(0,240,255,0.03)}
+.skill-name{color:var(--cy);font-weight:bold;font-size:11px}
+.skill-desc{color:var(--tx2);margin:2px 0 4px}
+.skill-meta{color:var(--tx3);font-size:8px;display:flex;gap:10px}
+.skill-actions{display:flex;gap:6px;margin-top:6px}
+.skill-actions button{background:var(--n2);border:1px solid var(--n3);color:var(--tx2);padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer}
+.skill-actions button:hover{background:var(--n3);color:var(--tx)}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+</style>
+<script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function skillsToast(msg,color){var e=document.getElementById('skills-toast');if(!e)return;e.textContent=msg;e.style.display='block';e.style.borderColor=color||'var(--cy)';e.style.color=color||'var(--cy)';clearTimeout(e._t);e._t=setTimeout(function(){e.style.display='none'},3000)}
+async function openSkills(){
+  document.getElementById('skills-panel').classList.add('open');
+  await skillsRefresh();
+}
+function closeSkills(){
+  document.getElementById('skills-panel').classList.remove('open');
+}
+async function skillsRefresh(){
+  var el = document.getElementById('skills-list');
+  var se = document.getElementById('skills-stats');
+  el.innerHTML = '<div style="padding:12px;text-align:center;color:var(--tx3);font-size:9px">CARICAMENTO...</div>';
+  try {
+    var r = await fetch('/api/skills/list');
+    var d = await r.json();
+    var skills = d.skills || [];
+    document.getElementById('skills-count-label').textContent = skills.length+' SKILLS';
+    el.innerHTML = '';
+    if(skills.length === 0){
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tx3);font-size:10px">Nessuna skill. Descrivi cosa vuoi e premi GENERA!</div>';
+    } else {
+      skills.forEach(function(s){
+        var sr = s.success_count && s.usage_count ? (s.success_count/s.usage_count*100).toFixed(0)+'%' : '—';
+        var div = document.createElement('div');
+        div.className = 'skill-item';
+        var nameHtml = esc(s.name);
+        var descHtml = esc((s.description||'').slice(0,100));
+        var catHtml = esc(s.category||'');
+        div.innerHTML = '<div class="skill-name">'+nameHtml+' <span style="color:var(--tx3)">v'+esc(s.version)+'</span></div>'+
+          '<div class="skill-desc">'+descHtml+'</div>'+
+          '<div class="skill-meta">📊 '+s.usage_count+' usi | ✅ '+sr+' | ⏱ '+(s.avg_duration_ms||0).toFixed(0)+'ms | 📁 '+catHtml+'</div>'+
+          '<div class="skill-actions">'+
+          '<button onclick="skillsRun(\''+nameHtml.replace(/'/g,"\\'")+'\')">▶ ESEGUI</button>'+
+          '<button onclick="skillsInfo(\''+nameHtml.replace(/'/g,"\\'")+'\')">ℹ INFO</button>'+
+          '<button onclick="skillsToggle(\''+nameHtml.replace(/'/g,"\\'")+'\')">'+(s.enabled?'⏹ DISATTIVA':'✅ ATTIVA')+'</button>'+
+          '<button onclick="skillsDelete(\''+nameHtml.replace(/'/g,"\\'")+'\')" style="color:#f44">🗑 ELIMINA</button>'+
+          '</div>';
+        el.appendChild(div);
+      });
+    }
+    var rs = await fetch('/api/skills/stats');
+    var sd = await rs.json();
+    var st = sd.stats || {};
+    se.innerHTML = '🧠 '+st.total+' skills | ✅ '+st.total_success+' successi | ❌ '+st.total_failures+' fallimenti | 🔄 '+st.total_uses+' usi totali';
+  } catch(e){
+    el.innerHTML = '<div style="padding:12px;color:#f44;font-size:10px">Errore: '+esc(e.message)+'</div>';
+  }
+}
+async function skillsCreate(){
+  var name = document.getElementById('skills-name-input').value.trim();
+  var desc = document.getElementById('skills-desc-input').value.trim();
+  if(!name || !desc){ skillsToast('Inserisci nome e descrizione','var(--am)'); return; }
+  document.getElementById('skills-create-wrap').innerHTML = '<div style="padding:8px;color:var(--cy);font-size:10px">⚡ Generazione skill in corso (10-30 secondi)...</div>';
+  try {
+    var r = await fetch('/api/task', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({task:'skills_create', params:{name:name, description:desc}})});
+    var d = await r.json();
+    await skillsRefresh();
+    document.getElementById('skills-create-wrap').innerHTML =
+      '<div style="padding:8px;color:#0f0;font-size:10px">✅ '+esc(d.result||'Skill creata')+'</div>';
+    setTimeout(function(){location.reload()},2000);
+  } catch(e){
+    document.getElementById('skills-create-wrap').innerHTML = '<div style="padding:8px;color:#f44;font-size:10px">❌ '+esc(e.message)+'</div>';
+  }
+}
+async function skillsRun(name){
+  var r = await fetch('/api/skills/run', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:name})});
+  var d = await r.json();
+  skillsToast('✅ '+(d.result||'Eseguita'),'#0f0');
+}
+async function skillsInfo(name){
+  try {
+    var r = await fetch('/api/skills/run', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:name, dry_run:true})});
+    var d = await r.json();
+    skillsToast('ℹ '+(d.info||'Nessuna info disponibile'),'var(--cy)');
+  } catch(e){
+    skillsToast('❌ '+e.message,'#f44');
+  }
+}
+async function skillsToggle(name){
+  await fetch('/api/skills/toggle', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:name})});
+  await skillsRefresh();
+}
+async function skillsDelete(name){
+  if(!confirm('Eliminare skill '+name+'?')) return;
+  await fetch('/api/skills/delete', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:name})});
+  await skillsRefresh();
+}
+</script>

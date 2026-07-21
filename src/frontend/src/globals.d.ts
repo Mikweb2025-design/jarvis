@@ -1,0 +1,54 @@
+declare const marked: {
+  setOptions: (opts: Record<string, any>) => void;
+  parse: (text: string) => string;
+};
+
+interface Window {
+  SpeechRecognition: any;
+  webkitSpeechRecognition: any;
+  YT: any;
+  sendMessage: () => void;
+  doChat: (text: string) => void;
+  speak: (text: string) => void;
+  setHoloState: (state: string) => void;
+  selectVoice: (el: HTMLElement) => void;
+  selectTheme: (el: HTMLElement) => void;
+  qa: (tool: string, args: Record<string, any>) => void;
+  speakAction: (tool: string, args: Record<string, any>) => void;
+  mailAction: () => void;
+  send: () => void;
+  triggerGlitch: () => void;
+  closeWorldNews: () => void;
+  openWorldNews: () => void;
+  openWebcam: (city: string, lat?: number, lon?: number, video_id?: string) => void;
+  closeWebcam: () => void;
+  closeWebcamGrid: () => void;
+  openHAWidget: () => void;
+  closeHAWidget: () => void;
+  toggleWake: () => void;
+  sysmsg: (msg: string) => void;
+  openMem: () => void;
+  closeMem: () => void;
+  openRag: () => void;
+  closeRag: () => void;
+  openTrends: () => void;
+  closeTrends: () => void;
+  openGit: () => void;
+  closeGit: () => void;
+  openGoals: () => void;
+  closeGoals: () => void;
+  openSettings: () => void;
+  closeSettings: () => void;
+  openVision: () => void;
+  closeVision: () => void;
+  openPresentation: () => void;
+  closePresentation: () => void;
+  toggleMobDrawer: () => void;
+  closeMobDrawer: () => void;
+  resetChat: () => void;
+  clearChat: () => void;
+  wnStartAutoNews: () => void;
+  presRenderList: () => void;
+  closeWorldNews: () => void;
+  Avatar3D: any;
+}

@@ -79,6 +79,18 @@ class TTSRequest(BaseModel):
     language: str = "italian"
     speed: float = 1.0
 
+class VoiceDesignRequest(BaseModel):
+    text: str
+    instruct: str = "Una voce femminile italiana chiara, calda e professionale"
+    language: str = "Italian"
+    save_as: Optional[str] = None
+
+class VoiceCloneRequest(BaseModel):
+    text: str
+    instruct: str = "Una voce femminile italiana chiara, calda e professionale"
+    language: str = "Italian"
+    speaker_name: str = "custom"
+
 class ConfigUpdate(BaseModel):
     model: Optional[str] = None
     voice: Optional[str] = None
@@ -389,7 +401,8 @@ cfg = load_config()
 agent = JarvisAgent(cfg)
 tts_engine = KokoroTTS(cfg)
 
-# ── Qwen3-TTS Worker ──
+# ── Qwen3-TTS Workers ──
+# Main model: CustomVoice (1.7B, voci predefinite + emotion control)
 _tts_model = None
 _tts_queue = None
 _tts_result = {}
@@ -399,6 +412,56 @@ _tts_ready = threading.Event()
 _tts_stop = threading.Event()
 _tts_worker_thread = None
 
+# Fast model: 0.6B CustomVoice per testi brevi
+_tts_fast_model = None
+_tts_fast_queue = None
+_tts_fast_result = {}
+_tts_fast_lock = threading.Lock()
+_tts_fast_event = threading.Event()
+_tts_fast_ready = threading.Event()
+
+# VoiceDesign model: creazione voci da descrizione
+_vd_model = None
+_vd_queue = None
+_vd_result = {}
+_vd_lock = threading.Lock()
+_vd_event = threading.Event()
+_vd_ready = threading.Event()
+
+# ── Helpers ──
+def _clean_tts_text(text):
+    return re.sub(r'\*\*(.+?)\*\*', r'\1',
+           re.sub(r'\*(.+?)\*', r'\1',
+           re.sub(r'`(.+?)`', r'\1',
+           re.sub(r'#{1,6}\s*', '',
+           re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text))))).strip()
+
+def _get_lang_config(voice, language):
+    lang_config = cfg["tts"].get("qwen3_languages", {})
+    if language and language.lower() in lang_config:
+        lc = lang_config[language.lower()]
+        return (voice or lc.get("voice", "vivian"),
+                lc.get("language", "Italian"),
+                lc.get("instruct", "Parla in italiano con accento italiano naturale, pronuncia perfetta"))
+    return (voice or "vivian", language or "Italian",
+            "Parla in italiano con accento italiano naturale, pronuncia perfetta")
+
+def _run_tts_inference(model, text, lang, spk=None, inst=None, use_voice_design=False):
+    import tempfile, soundfile as sf
+    if use_voice_design:
+        results = list(model.generate_voice_design(text=text, language=lang, instruct=inst))
+    else:
+        results = list(model.generate_custom_voice(text=text, speaker=spk, language=lang, instruct=inst))
+    audio = results[0].audio
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        output_path = f.name
+    sf.write(output_path, np.array(audio), 24000)
+    with open(output_path, "rb") as f:
+        data = f.read()
+    os.unlink(output_path)
+    return data, "audio/wav"
+
+# ── Main Worker (1.7B CustomVoice) ──
 def _tts_worker():
     global _tts_model
     try:
@@ -409,16 +472,13 @@ def _tts_worker():
         t0 = time.time()
         _tts_model = load_model(model_name)
         elapsed = time.time() - t0
-        print(f"  [TTS] OK Qwen3-TTS caricato in RAM in {elapsed:.1f}s")
+        print(f"  [TTS] OK Qwen3-TTS (1.7B) caricato in {elapsed:.1f}s [{model_name.split('/')[-1]}]")
         _tts_ready.set()
     except Exception as e:
         print(f"  [TTS] Errore caricamento Qwen3-TTS: {e}")
         _tts_model = None
         _tts_ready.set()
         return
-
-    import tempfile, soundfile as sf
-    is_voice_design = getattr(_tts_model.config, 'tts_model_type', '') == 'voice_design'
     while not _tts_stop.is_set():
         _tts_event.wait(timeout=1.0)
         if _tts_stop.is_set():
@@ -430,24 +490,14 @@ def _tts_worker():
         if task is None:
             continue
         try:
-            text = task["text"]
-            lang = task["language"]
-            spk = task.get("speaker", "vivian")
-            inst = task.get("inst", "Parla in italiano con accento italiano naturale, pronuncia perfetta")
-            if is_voice_design:
-                results = list(_tts_model.generate_voice_design(text=text, language=lang, instruct=inst))
-            else:
-                results = list(_tts_model.generate_custom_voice(text=text, speaker=spk, language=lang, instruct=inst))
-            audio = results[0].audio
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                output_path = f.name
-            sf.write(output_path, np.array(audio), 24000)
-            with open(output_path, "rb") as f:
-                data = f.read()
-            os.unlink(output_path)
+            data, ct = _run_tts_inference(
+                _tts_model, task["text"], task["language"],
+                spk=task.get("speaker", "vivian"),
+                inst=task.get("inst", "Parla in italiano con accento italiano naturale, pronuncia perfetta")
+            )
             with _tts_lock:
                 done = _tts_result[task_id].pop("done", None)
-                _tts_result[task_id] = {"data": data, "content_type": "audio/wav", "error": None}
+                _tts_result[task_id] = {"data": data, "content_type": ct, "error": None}
         except Exception as e:
             print(f"  [TTS Qwen3 Worker] fallito: {e}")
             with _tts_lock:
@@ -457,6 +507,98 @@ def _tts_worker():
             done.set()
         _tts_event.clear()
 
+# ── Fast Worker (0.6B CustomVoice for short text) ──
+def _tts_fast_worker():
+    global _tts_fast_model
+    tts_cfg = cfg["tts"]
+    if not tts_cfg.get("tts_fast_enabled", True):
+        _tts_fast_ready.set()
+        return
+    try:
+        from mlx_audio.tts.utils import load_model
+        model_name = tts_cfg.get("tts_fast_model", "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit")
+        print(f"  [TTS] Fast Worker: caricamento {model_name}...")
+        t0 = time.time()
+        _tts_fast_model = load_model(model_name)
+        elapsed = time.time() - t0
+        print(f"  [TTS] OK Fast (0.6B) caricato in {elapsed:.1f}s")
+        _tts_fast_ready.set()
+    except Exception as e:
+        print(f"  [TTS] Fast Worker fallito: {e}")
+        _tts_fast_model = None
+        _tts_fast_ready.set()
+    while _tts_fast_model is not None:
+        _tts_fast_event.wait(timeout=1.0)
+        if _tts_stop.is_set():
+            break
+        _tts_fast_event.clear()
+        with _tts_fast_lock:
+            task_id = _tts_fast_queue
+            task = _tts_fast_result.get(task_id, {}).get("task")
+        if task is None:
+            continue
+        try:
+            data, ct = _run_tts_inference(
+                _tts_fast_model, task["text"], task["language"],
+                spk=task.get("speaker", "vivian"),
+                inst=task.get("inst", "Parla in italiano con accento italiano naturale, pronuncia perfetta")
+            )
+            with _tts_fast_lock:
+                _tts_fast_result[task_id] = {"data": data, "content_type": ct, "error": None}
+        except Exception as e:
+            print(f"  [TTS Fast Worker] fallito: {e}")
+            with _tts_fast_lock:
+                _tts_fast_result[task_id] = {"data": None, "content_type": None, "error": str(e)}
+        _tts_fast_event.clear()
+
+# ── VoiceDesign Worker ──
+def _vd_worker():
+    global _vd_model
+    if not cfg["tts"].get("voicedesign_enabled", True):
+        _vd_ready.set()
+        return
+    try:
+        from mlx_audio.tts.utils import load_model
+        model_name = cfg["tts"].get("voicedesign_model", "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit")
+        print(f"  [TTS] VoiceDesign Worker: caricamento {model_name}...")
+        t0 = time.time()
+        _vd_model = load_model(model_name)
+        elapsed = time.time() - t0
+        print(f"  [TTS] OK VoiceDesign caricato in {elapsed:.1f}s")
+        _vd_ready.set()
+    except Exception as e:
+        print(f"  [TTS] VoiceDesign Worker fallito: {e}")
+        _vd_model = None
+        _vd_ready.set()
+    while _vd_model is not None:
+        _vd_event.wait(timeout=1.0)
+        if _tts_stop.is_set():
+            break
+        _vd_event.clear()
+        with _vd_lock:
+            task_id = _vd_queue
+            task = _vd_result.get(task_id, {}).get("task")
+        if task is None:
+            continue
+        try:
+            data, ct = _run_tts_inference(
+                _vd_model, task["text"], task["language"],
+                inst=task.get("inst", "Una voce femminile italiana chiara, calda e professionale"),
+                use_voice_design=True
+            )
+            with _vd_lock:
+                done = _vd_result[task_id].pop("done", None)
+                _vd_result[task_id] = {"data": data, "content_type": ct, "error": None}
+        except Exception as e:
+            print(f"  [TTS VoiceDesign Worker] fallito: {e}")
+            with _vd_lock:
+                done = _vd_result[task_id].pop("done", None)
+                _vd_result[task_id] = {"data": None, "content_type": None, "error": str(e)}
+        if done:
+            done.set()
+        _vd_event.clear()
+
+# ── Load functions ──
 def load_qwen3_model_safe():
     global _tts_worker_thread
     _tts_worker_thread = threading.Thread(target=_tts_worker, daemon=True, name="qwen3-tts-worker")
@@ -465,20 +607,38 @@ def load_qwen3_model_safe():
         return _tts_model is not None
     return False
 
-def _qwen3_generate(text, voice="vivian", language="italian"):
-    global _tts_queue, _tts_result
+def load_tts_fast_safe():
+    t = threading.Thread(target=_tts_fast_worker, daemon=True, name="tts-fast-worker")
+    t.start()
+    _tts_fast_ready.wait(timeout=60)
+
+def load_vd_safe():
+    t = threading.Thread(target=_vd_worker, daemon=True, name="tts-vd-worker")
+    t.start()
+    _vd_ready.wait(timeout=60)
+
+def _qwen3_generate(text, voice="vivian", language="italian", use_fast=False):
+    global _tts_queue, _tts_result, _tts_fast_queue, _tts_fast_result
+    if use_fast and _tts_fast_model is not None:
+        fast_max = cfg["tts"].get("tts_fast_text_max", 150)
+        if len(text) <= fast_max:
+            spk, lang, inst = _get_lang_config(voice, language)
+            task_id = f"fast_{time.time()}_{id(threading.current_thread())}"
+            with _tts_fast_lock:
+                _tts_fast_queue = task_id
+                _tts_fast_result[task_id] = {"task": {"text": text, "speaker": spk, "language": lang, "inst": inst}}
+            _tts_fast_event.set()
+            for _ in range(60):
+                time.sleep(0.5)
+                with _tts_fast_lock:
+                    r = _tts_fast_result.get(task_id)
+                if r and "data" in r:
+                    return r["data"], r["content_type"], r.get("error")
+                if r and r.get("error"):
+                    break
     if len(text) > 500:
         return None, None, "text too long for Qwen3, use Edge TTS"
-    lang_config = cfg["tts"].get("qwen3_languages", {})
-    if language and language.lower() in lang_config:
-        lc = lang_config[language.lower()]
-        spk = voice if voice else lc.get("voice", "vivian")
-        lang = lc.get("language", "Italian")
-        inst = lc.get("instruct", "Parla in italiano con accento italiano naturale, pronuncia perfetta")
-    else:
-        spk = voice or "vivian"
-        lang = language or "Italian"
-        inst = "Parla in italiano con accento italiano naturale, pronuncia perfetta"
+    spk, lang, inst = _get_lang_config(voice, language)
     task_id = f"task_{time.time()}_{id(threading.current_thread())}"
     done = threading.Event()
     with _tts_lock:
@@ -492,22 +652,40 @@ def _qwen3_generate(text, voice="vivian", language="italian"):
             return result["data"], result["content_type"], result["error"]
     return None, None, "timeout"
 
+def _voicedesign_generate(text, instruct, language="Italian"):
+    if _vd_model is None:
+        return None, None, "VoiceDesign model not loaded"
+    task_id = f"vd_{time.time()}_{id(threading.current_thread())}"
+    done = threading.Event()
+    with _vd_lock:
+        _vd_queue = task_id
+        _vd_result[task_id] = {"task": {"text": text, "language": language, "inst": instruct}, "done": done}
+    _vd_event.set()
+    if done.wait(timeout=45):
+        with _vd_lock:
+            result = _vd_result.get(task_id)
+        if result and "data" in result:
+            return result["data"], result["content_type"], result["error"]
+    return None, None, "timeout"
+
 async def _generate_tts_chunk(text, voice="vivian", language="italian", speed=1.0):
     import tempfile
-    clean = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-    clean = re.sub(r'\*(.+?)\*', r'\1', clean)
-    clean = re.sub(r'`(.+?)`', r'\1', clean)
-    clean = re.sub(r'#{1,6}\s*', '', clean)
-    clean = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean).strip()
+    clean = _clean_tts_text(text)
     if not clean:
         return None, None
-    try:
-        if _tts_model is not None:
-            data, ct, err = _qwen3_generate(clean, voice=voice, language=language)
-            if data is not None:
+    # Qwen3 (locale, qualità alta)
+    if cfg["tts"].get("qwen3_enabled", True) and _tts_model is not None:
+        try:
+            use_fast = cfg["tts"].get("tts_fast_enabled", True) and len(clean) <= cfg["tts"].get("tts_fast_text_max", 150)
+            data, ct, err = _qwen3_generate(clean, voice, language, use_fast=use_fast)
+            if data:
+                print(f"  [TTS] Qwen3: {len(clean)} chars, {voice}, {language}")
                 return data, ct
-    except Exception as e:
-        print(f"  [TTS Qwen3] fallito: {e}")
+            if err and "timeout" not in err:
+                print(f"  [TTS] Qwen3 fallback: {err}")
+        except Exception as e:
+            print(f"  [TTS] Qwen3 fallito: {e}")
+    # Edge TTS (cloud, qualità alta)
     try:
         import edge_tts
         tts_voice = VOICE_MAP.get(voice, "it-IT-ElsaNeural")
@@ -519,9 +697,10 @@ async def _generate_tts_chunk(text, voice="vivian", language="italian", speed=1.
         with open(p, "rb") as f:
             data = f.read()
         os.unlink(p)
+        print(f"  [TTS] Edge: {len(clean)} chars, {voice}")
         return data, "audio/mpeg"
     except Exception as e:
-        print(f"  [TTS Edge] fallito: {e}")
+        print(f"  [TTS] Edge fallito: {e}")
         return None, None
 
 _HAVE_DEEP = False
@@ -551,10 +730,20 @@ memory.db.execute("PRAGMA busy_timeout=5000")
 
 # ── Lifespan ──
 
+def _lazy_load_tts():
+    if load_qwen3_model_safe():
+        load_tts_fast_safe()
+        load_vd_safe()
+    else:
+        _tts_fast_ready.set()
+        _vd_ready.set()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Carica Qwen3-TTS in background (non blocca l'avvio)
     if cfg["tts"].get("qwen3_enabled", True):
-        load_qwen3_model_safe()
+        import threading
+        threading.Thread(target=_lazy_load_tts, daemon=True).start()
     else:
         _tts_ready.set()
     _rag_docs_dir = Path(__file__).parent / "data" / "documents"
@@ -584,6 +773,18 @@ async def lifespan(app: FastAPI):
     try:
         _ensure_openwa_running()
     except:
+        pass
+    try:
+        _wa_result = _wa_ensure()
+        if isinstance(_wa_result, dict):
+            if _wa_result.get("status") == "scan_qr":
+                logger.warning("[WA] Sessione richiede scansione QR — usa POST /api/whatsapp/ensure")
+            elif _wa_result.get("status") == "ready":
+                logger.info("[WA] Sessione WhatsApp attiva all'avvio")
+            else:
+                logger.info("[WA] Sessione WhatsApp: %s", _wa_result.get("status", "?"))
+    except:
+        logger.warning("[WA] _wa_ensure fallito all'avvio", exc_info=True)
         pass
     try:
         _ensure_wa_webhook()
@@ -969,6 +1170,49 @@ async def api_wav2lip(body: TTSRequest):
     os.unlink(out_path)
     os.unlink(audio_path)
     return Response(content=video_data, media_type="video/mp4")
+
+# ── TTS VoiceDesign — crea voci da descrizione ──
+
+@app.post("/api/tts/voicedesign")
+async def api_tts_voicedesign(body: VoiceDesignRequest):
+    if not body.text:
+        raise HTTPException(400, "Testo vuoto")
+    t0 = time.time()
+    data, content_type, err = _voicedesign_generate(body.text, body.instruct, body.language)
+    if data is None:
+        raise HTTPException(500, f"VoiceDesign fallito: {err}")
+    if body.save_as:
+        save_dir = Path(__file__).parent / "data" / "voicedesign"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        path = save_dir / f"{body.save_as}.wav"
+        with open(path, "wb") as f:
+            f.write(data)
+        elapsed = round(time.time() - t0, 2)
+        return {"status": "saved", "path": str(path), "bytes": len(data), "elapsed": elapsed}
+    ct = "audio/wav"
+    return Response(content=data, media_type=ct, headers={
+        "Content-Disposition": "inline",
+        "Content-Length": str(len(data)),
+    })
+
+# ── TTS Clone — genera voce con VoiceDesign, poi la usa come speaker ──
+
+@app.post("/api/tts/clone")
+async def api_tts_clone(body: VoiceCloneRequest):
+    if not body.text:
+        raise HTTPException(400, "Testo vuoto")
+    t0 = time.time()
+    vd_data, vd_ct, vd_err = _voicedesign_generate(body.text, body.instruct, body.language)
+    if vd_data is None:
+        raise HTTPException(500, f"Voice cloning fallito: {vd_err}")
+    elapsed = round(time.time() - t0, 2)
+    ct = vd_ct or "audio/wav"
+    return Response(content=vd_data, media_type=ct, headers={
+        "Content-Disposition": "inline",
+        "Content-Length": str(len(vd_data)),
+        "X-Voice-Clone": body.speaker_name,
+        "X-Elapsed": str(elapsed),
+    })
 
 # ── Memory ──
 

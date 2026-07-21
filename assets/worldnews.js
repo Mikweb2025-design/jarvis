@@ -2364,10 +2364,15 @@ setInterval(() => {
 
 (function tryAutoInit() {
   const panel = document.getElementById('worldnews-panel');
-  if (panel && panel.classList.contains('open')) { setTimeout(wnInit, 300); }
-  else if (panel) {
+  if (!panel) return;
+  function safeInit() {
+    if (typeof wnInit !== 'function') { setTimeout(safeInit, 500); return; }
+    try { wnInit(); } catch(e) { console.warn('[WN] safeInit ritenta:', e); setTimeout(safeInit, 1000); }
+  }
+  if (panel.classList.contains('open')) { setTimeout(safeInit, 300); }
+  else {
     const obs = new MutationObserver(() => {
-      if (panel.classList.contains('open')) { obs.disconnect(); setTimeout(wnInit, 300); }
+      if (panel.classList.contains('open')) { obs.disconnect(); setTimeout(safeInit, 300); }
     });
     obs.observe(panel, { attributes: true, attributeFilter: ['class'] });
   }

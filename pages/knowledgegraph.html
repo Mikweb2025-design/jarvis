@@ -1,0 +1,120 @@
+<div class="panel-header">
+    <h3>🔗 KNOWLEDGE GRAPH</h3>
+    <span id="kg-status-badge" style="font-size:9px;font-family:var(--fm);color:var(--tx3)">GitNexus</span>
+    <button onclick="closeKG()">✕</button>
+  </div>
+  <div id="kg-toolbar" style="padding:6px 12px;display:flex;gap:6px;border-bottom:1px solid var(--n3);flex-wrap:wrap">
+    <button onclick="kgAnalyze()" style="background:var(--cy2);color:#000;border:none;padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">📊 ANALYZE</button>
+    <button onclick="kgSymbols()" style="background:var(--n2);color:var(--tx);border:1px solid var(--n3);padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">🔣 SYMBOLS</button>
+    <button onclick="kgGraph()" style="background:var(--n2);color:var(--tx);border:1px solid var(--n3);padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">🕸️ GRAPH</button>
+    <button onclick="kgStatus()" style="background:var(--n2);color:var(--tx);border:1px solid var(--n3);padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">ℹ️ STATUS</button>
+    <div style="flex:1;min-width:10px"></div>
+    <input id="kg-search-input" placeholder="cerca nel codice..." style="width:160px;background:var(--n2);border:1px solid var(--n3);color:var(--tx);padding:4px 8px;font-size:10px;border-radius:3px">
+    <button onclick="kgSearch()" style="background:var(--pp);color:#fff;border:none;padding:4px 10px;border-radius:3px;font-size:9px;cursor:pointer">🔍</button>
+  </div>
+  <div id="kg-content" style="padding:8px;overflow-y:auto;max-height:calc(85vh - 90px)">
+    <div id="kg-result" style="padding:8px;background:rgba(255,255,255,0.02);border:1px solid var(--n3);border-radius:4px;font-size:9px;font-family:var(--fm);color:var(--tx2);white-space:pre-wrap;overflow-x:auto;min-height:100px">
+      📡 Carica i dati del repository...
+    </div>
+    <div id="kg-stats" style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">
+      <div class="kg-stat-box"><div class="kg-stat-label">FILES</div><div id="kg-stat-files" class="kg-stat-num">--</div></div>
+      <div class="kg-stat-box"><div class="kg-stat-label">LINGUAGGI</div><div id="kg-stat-langs" class="kg-stat-num">--</div></div>
+      <div class="kg-stat-box"><div class="kg-stat-label">LINEE</div><div id="kg-stat-lines" class="kg-stat-num">--</div></div>
+    </div>
+  </div>
+<style>
+#knowledgegraph-panel{position:fixed;top:60px;left:10px;width:600px;max-height:85vh;background:rgba(10,10,18,0.97);border:1px solid var(--pp);border-radius:4px;display:none;z-index:1010;overflow:hidden;box-shadow:0 0 30px rgba(170,0,255,0.3);backdrop-filter:blur(16px)}
+#knowledgegraph-panel.open{display:flex;flex-direction:column}
+#kg-content{flex:1;overflow:hidden}
+.kg-stat-box{border:1px solid var(--n3);border-radius:4px;padding:8px;text-align:center;background:rgba(255,255,255,0.02)}
+.kg-stat-label{font-size:8px;color:var(--tx3);margin-bottom:2px}
+.kg-stat-num{font-size:16px;font-weight:bold;color:var(--cy);font-family:'Orbitron',monospace}
+#kg-result::-webkit-scrollbar{width:4px}
+#kg-result::-webkit-scrollbar-thumb{background:var(--n3);border-radius:2px}
+</style>
+<script>
+function closeKG() { document.getElementById('knowledgegraph-panel')?.classList.remove('open'); }
+window.closeKG = closeKG;
+async function kgAnalyze() {
+  document.getElementById('kg-result').textContent = '⏳ Analisi in corso...';
+  try {
+    var r = await fetch('/api/kg/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    var d = await r.json();
+    if (d.error) { document.getElementById('kg-result').textContent = '⚠ ' + d.error; return; }
+    var lines = ['📊 ANALISI REPOSITORY', '━'.repeat(40)];
+    lines.push('Percorso: ' + (d.repo_path || '--'));
+    lines.push('File totali: ' + (d.total_files || 0));
+    lines.push('Linee totali: ' + (d.total_lines || 0));
+    if (d.languages) {
+      lines.push('Linguaggi:');
+      Object.entries(d.languages).forEach(function(e) {
+        lines.push('  ' + e[0] + ': ' + e[1] + ' file');
+      });
+    }
+    if (d.gitnexus_available === false) lines.push('⚠ GitNexus non installato — usato fallback file tree');
+    document.getElementById('kg-result').textContent = lines.join('\n');
+    document.getElementById('kg-stat-files').textContent = d.total_files || '--';
+    document.getElementById('kg-stat-langs').textContent = d.languages ? Object.keys(d.languages).length : '--';
+    document.getElementById('kg-stat-lines').textContent = d.total_lines || '--';
+  } catch(e) { document.getElementById('kg-result').textContent = '⚠ Errore: ' + e.message; }
+}
+async function kgSymbols() {
+  document.getElementById('kg-result').textContent = '⏳ Estrazione simboli...';
+  try {
+    var r = await fetch('/api/kg/symbols', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    var d = await r.json();
+    if (d.error) { document.getElementById('kg-result').textContent = '⚠ ' + d.error; return; }
+    var syms = d.symbols || d;
+    var lines = ['🔣 SIMBOLI DEL CODICE', '━'.repeat(40)];
+    if (syms.total_functions !== undefined) lines.push('Funzioni: ' + syms.total_functions);
+    if (syms.total_classes !== undefined) lines.push('Classi: ' + syms.total_classes);
+    if (syms.functions && syms.functions.length > 0) {
+      lines.push('\nFunzioni:');
+      syms.functions.slice(0, 30).forEach(function(f) { lines.push('  def ' + f.name + ' → ' + f.file); });
+    }
+    if (syms.classes && syms.classes.length > 0) {
+      lines.push('\nClassi:');
+      syms.classes.slice(0, 20).forEach(function(c) { lines.push('  class ' + c.name + ' → ' + c.file); });
+    }
+    document.getElementById('kg-result').textContent = lines.join('\n') || 'Nessun simbolo trovato';
+  } catch(e) { document.getElementById('kg-result').textContent = '⚠ Errore: ' + e.message; }
+}
+async function kgGraph() {
+  document.getElementById('kg-result').textContent = '⏳ Costruzione grafo...';
+  try {
+    var r = await fetch('/api/kg/graph', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    var d = await r.json();
+    if (d.error) { document.getElementById('kg-result').textContent = '⚠ ' + d.error; return; }
+    document.getElementById('kg-result').textContent = JSON.stringify(d, null, 2);
+  } catch(e) { document.getElementById('kg-result').textContent = '⚠ Errore: ' + e.message; }
+}
+async function kgSearch() {
+  var q = document.getElementById('kg-search-input').value.trim();
+  if (!q) { sysmsg('⚠ Inserisci una query'); return; }
+  document.getElementById('kg-result').textContent = '⏳ Ricerca: "' + q + '"...';
+  try {
+    var r = await fetch('/api/kg/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:q})});
+    var d = await r.json();
+    if (d.error) { document.getElementById('kg-result').textContent = '⚠ ' + d.error; return; }
+    var results = d.results || [];
+    var lines = ['🔍 RISULTATI PER: "' + q + '"', '━'.repeat(40)];
+    if (results.length === 0) { lines.push('Nessun risultato trovato'); }
+    else {
+      lines.push('Trovati: ' + (d.total || results.length));
+      results.forEach(function(r) { lines.push(r.file + ':' + r.line + '  ' + r.content); });
+    }
+    document.getElementById('kg-result').textContent = lines.join('\n');
+  } catch(e) { document.getElementById('kg-result').textContent = '⚠ Errore: ' + e.message; }
+}
+async function kgStatus() {
+  try {
+    var r = await fetch('/api/kg/status');
+    var d = await r.json();
+    var lines = ['ℹ️ KNOWLEDGE GRAPH STATUS', '━'.repeat(40)];
+    lines.push('GitNexus: ' + (d.gitnexus_available ? '✅ Disponibile' : '⚠ Non installato'));
+    if (d.gitnexus_bin) lines.push('Bin: ' + d.gitnexus_bin);
+    lines.push('Repo: ' + (d.repo_path || '--'));
+    document.getElementById('kg-result').textContent = lines.join('\n');
+  } catch(e) { document.getElementById('kg-result').textContent = '⚠ Errore: ' + e.message; }
+}
+</script>

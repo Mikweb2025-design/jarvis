@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>JARVIS Avatar Test</title>
+<style>
+  body{margin:0;background:#000;color:#0ff;font-family:monospace;overflow:hidden}
+  #avatar-widget{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:520px;height:520px;
+    border:1px solid #0ff;border-radius:8px;
+    background:radial-gradient(circle at center, rgba(0,255,255,0.05), transparent);
+    box-shadow:0 0 30px rgba(0,255,255,0.4),inset 0 0 30px rgba(0,255,255,0.1);
+    overflow:hidden;
+  }
+  #avatar-widget::before{
+    content:'HOLO.LINK';position:absolute;top:6px;left:10px;font-size:10px;
+    letter-spacing:3px;color:#0ff;opacity:0.8;z-index:5;
+  }
+  #avatar-widget::after{
+    content:'◆ SYSTEM STANDBY ◆';position:absolute;bottom:6px;left:50%;
+    transform:translateX(-50%);font-size:10px;letter-spacing:3px;color:#0ff;
+    opacity:0.7;z-index:5;
+  }
+  #avatar3d-canvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block}
+  #avatar3d-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    color:#0ff;font-size:12px;letter-spacing:3px;text-align:center;
+    text-shadow:0 0 10px rgba(0,255,255,0.7)}
+  #title{
+    position:fixed;top:20px;left:50%;transform:translateX(-50%);
+    font-family:'Orbitron',monospace;font-size:48px;letter-spacing:8px;
+    color:#0ff;text-shadow:0 0 20px rgba(0,255,255,0.8);
+    font-weight:900;
+  }
+  #subtitle{
+    position:fixed;top:80px;left:50%;transform:translateX(-50%);
+    font-size:14px;letter-spacing:6px;color:#0ff;opacity:0.6;
+  }
+  #info{position:fixed;bottom:20px;left:20px;font-size:11px;line-height:1.6}
+  .grid{
+    position:fixed;top:0;left:0;width:100%;height:100%;z-index:-1;
+    background-image:
+      linear-gradient(rgba(0,255,255,0.07) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(0,255,255,0.07) 1px,transparent 1px);
+    background-size:40px 40px;
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div class="grid"></div>
+<div id="title">J.A.R.V.I.S</div>
+<div id="subtitle">// CYBERPUNK HUD v9.1 //</div>
+<div id="avatar-widget">
+  <canvas id="avatar3d-canvas"></canvas>
+  <div id="avatar3d-loading">CARICANDO MODELLO 3D...</div>
+</div>
+<div id="info">
+  <div id="status">Caricamento...</div>
+</div>
+<script type="module">
+window.SRV = '';
+</script>
+<script type="module" src="assets/avatar3d.js?v=test4"></script>
+</body>
+</html>

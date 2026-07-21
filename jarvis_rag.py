@@ -24,11 +24,22 @@ class JarvisRAG:
         self.db.row_factory = sqlite3.Row
         self._lock = threading.Lock()
         self._init_db()
+        self.db.execute("PRAGMA wal_autocheckpoint=1000")
+        self.db.execute("PRAGMA synchronous=NORMAL")
+        try:
+            self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except:
+            pass
         self._model = None
         self._model_name = None
-        self._load_model()
-        self._auto_embed_pending()
-    
+        self._model_loaded = False
+
+    def _ensure_model(self):
+        if not self._model_loaded:
+            self._load_model()
+            self._model_loaded = True
+            self._auto_embed_pending()
+
     def _init_db(self):
         c = self.db.cursor()
         c.execute("""CREATE TABLE IF NOT EXISTS documents(
@@ -89,6 +100,7 @@ class JarvisRAG:
     
     def _encode(self, text: str) -> np.ndarray:
         """Genera embedding vettoriale reale o fallback deterministico"""
+        self._ensure_model()
         if self._model is None:
             return self._hash_vector(text)
         if self._model_name == "mlx":

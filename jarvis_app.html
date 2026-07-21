@@ -247,12 +247,27 @@ html.theme-crystal #holo-overlay{
 
 /* Voice Grid Cyber */
 .voice-section{margin-bottom:10px}
-.voice-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
-.voice-btn{padding:5px 3px;background:rgba(255,0,170,0.02);border:1px solid rgba(255,0,170,0.08);
-  cursor:pointer;text-align:center;transition:all 0.12s;font-family:var(--fm);font-size:7px;color:var(--tx3)}
-.voice-btn:hover{border-color:rgba(0,240,255,0.3)}
-.voice-btn.active{border-color:var(--pk);background:rgba(255,0,170,0.08);color:var(--pk);text-shadow:0 0 6px var(--pkg);box-shadow:0 0 8px rgba(255,0,170,0.1)}
-.voice-btn .vn{display:block;letter-spacing:0.1em}
+.voice-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+.voice-btn{position:relative;padding:6px 3px;background:rgba(0,229,255,0.03);border:1px solid rgba(0,229,255,0.08);
+  cursor:pointer;text-align:center;transition:all 0.15s;font-family:var(--fm);font-size:7px;color:var(--tx3);
+  overflow:hidden;border-radius:3px}
+.voice-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent 60%,rgba(0,229,255,0.05));opacity:0;transition:opacity 0.2s}
+.voice-btn:hover{border-color:rgba(0,229,255,0.35);transform:translateY(-1px)}
+.voice-btn:hover::before{opacity:1}
+.voice-btn.active{border-color:var(--cy);background:rgba(0,229,255,0.08);color:var(--cy);
+  text-shadow:0 0 6px var(--cyg);box-shadow:0 0 10px rgba(0,229,255,0.12)}
+.voice-btn .vg{display:flex;align-items:center;justify-content:center;gap:2px;margin-bottom:2px}
+.voice-btn .vg span{width:3px;background:var(--cy);border-radius:1px;opacity:0;transition:all 0.2s}
+.voice-btn.active .vg span{opacity:0.6;animation:voiceBar 0.8s ease-in-out infinite alternate}
+.voice-btn .vg span:nth-child(1){height:8px;animation-delay:0s}
+.voice-btn .vg span:nth-child(2){height:12px;animation-delay:0.15s}
+.voice-btn .vg span:nth-child(3){height:6px;animation-delay:0.3s}
+.voice-btn .vg span:nth-child(4){height:10px;animation-delay:0.1s}
+.voice-btn .vg span:nth-child(5){height:7px;animation-delay:0.25s}
+@keyframes voiceBar{0%{transform:scaleY(0.5)}100%{transform:scaleY(1)}}
+.voice-btn .vi{font-size:11px;display:block;margin-bottom:1px}
+.voice-btn .vn{display:block;letter-spacing:0.12em;font-weight:600}
+.voice-btn .vl{display:block;font-size:6px;color:var(--tx4);letter-spacing:0.05em;margin-top:1px}
 
 /* Theme selector */
 .theme-section{margin-bottom:10px}
@@ -960,14 +975,26 @@ html.theme-crystal #holo-canvas{opacity:0.55}
     </div>
 
     <div class="voice-section">
-      <div class="section-label">VOICE</div>
+      <div class="section-label">🎙 VOICE</div>
       <div class="voice-grid" id="voice-grid">
-        <div class="voice-btn active" data-voice="vivian" onclick="selectVoice(this)"><span class="vn">VIVIAN</span></div>
-        <div class="voice-btn" data-voice="serena" onclick="selectVoice(this)"><span class="vn">SERENA</span></div>
-        <div class="voice-btn" data-voice="aiden" onclick="selectVoice(this)"><span class="vn">AIDEN</span></div>
-        <div class="voice-btn" data-voice="ryan" onclick="selectVoice(this)"><span class="vn">RYAN</span></div>
-        <div class="voice-btn" data-voice="eric" onclick="selectVoice(this)"><span class="vn">ERIC</span></div>
-        <div class="voice-btn" data-voice="dylan" onclick="selectVoice(this)"><span class="vn">DYLAN</span></div>
+        <div class="voice-btn active" data-voice="vivian" data-gender="f" onclick="selectVoice(this)">
+          <div class="vg"><span></span><span></span><span></span><span></span><span></span></div>
+          <span class="vi">👩</span><span class="vn">VIVIAN</span><span class="vl">italiano · naturale</span></div>
+        <div class="voice-btn" data-voice="serena" data-gender="f" onclick="selectVoice(this)">
+          <div class="vg"><span></span><span></span><span></span><span></span><span></span></div>
+          <span class="vi">👩</span><span class="vn">SERENA</span><span class="vl">italiano · calda</span></div>
+        <div class="voice-btn" data-voice="aiden" data-gender="m" onclick="selectVoice(this)">
+          <div class="vg"><span></span><span></span><span></span><span></span><span></span></div>
+          <span class="vi">🧑</span><span class="vn">AIDEN</span><span class="vl">italiano · prof.</span></div>
+        <div class="voice-btn" data-voice="ryan" data-gender="m" onclick="selectVoice(this)">
+          <div class="vg"><span></span><span></span><span></span><span></span><span></span></div>
+          <span class="vi">👨</span><span class="vn">RYAN</span><span class="vl">tedesco · profonda</span></div>
+        <div class="voice-btn" data-voice="eric" data-gender="m" onclick="selectVoice(this)">
+          <div class="vg"><span></span><span></span><span></span><span></span><span></span></div>
+          <span class="vi">👨</span><span class="vn">ERIC</span><span class="vl">tedesco · calma</span></div>
+        <div class="voice-btn" data-voice="dylan" data-gender="m" onclick="selectVoice(this)">
+          <div class="vg"><span></span><span></span><span></span><span></span><span></span></div>
+          <span class="vi">👨</span><span class="vn">DYLAN</span><span class="vl">tedesco · energica</span></div>
       </div>
     </div>
 

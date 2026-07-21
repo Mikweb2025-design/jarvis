@@ -1436,8 +1436,8 @@ function openWorldNews(){
     function tryInit(){
       if(typeof wnInit==='function'){wnInit();return}
       retries++;
-      if(retries<30) setTimeout(tryInit, 200);
-      else console.error('WN: wnInit not defined after 30 retries');
+      if(retries<100) setTimeout(tryInit, 200);
+      else console.error('WN: wnInit not defined after 100 retries');
     }
     setTimeout(tryInit, 100);
   } catch(e){console.error('WN open error:',e)}
