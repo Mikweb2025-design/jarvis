@@ -8,6 +8,31 @@ The project features over 120+ unified tools accessible via both a REST API and 
 
 ---
 
+## Screenshots
+
+<div align="center">
+  <table>
+    <tr>
+      <td><img src="assets/images/screenshot_chat.png" alt="Chat Interface" width="400"/></td>
+      <td><img src="assets/images/screenshot_dashboard.png" alt="Dashboard" width="400"/></td>
+    </tr>
+    <tr>
+      <td align="center"><em>Chat Interface</em></td>
+      <td align="center"><em>System Dashboard</em></td>
+    </tr>
+    <tr>
+      <td><img src="assets/images/screenshot_api_docs.png" alt="API Documentation" width="400"/></td>
+      <td><img src="assets/images/screenshot_settings.png" alt="Settings Panel" width="400"/></td>
+    </tr>
+    <tr>
+      <td align="center"><em>API Documentation (Swagger)</em></td>
+      <td align="center"><em>Settings Panel</em></td>
+    </tr>
+  </table>
+</div>
+
+---
+
 ## Features
 
 ### System Control

@@ -19,7 +19,6 @@ data/yolo/
 dist/
 build/
 output/
-*.png
 *.jpg
 *.jpeg
 *.gif
