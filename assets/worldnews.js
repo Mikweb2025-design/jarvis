@@ -162,13 +162,15 @@ function wnLoadData(data) {
   } else {
     wnReinitGlobeMarkers();
   }
+  /* Render SUBITO con testi originali, traduzione in background poi re-render */
+  try { wnRenderList(document.getElementById('wn-search')?.value || ''); } catch (e) {}
+  const geoLoc2 = wnData.filter(n => n.lat != null);
+  if (geoLoc2.length >= 1 && !_wnAutoBusy) {
+    setTimeout(wnStartAutoNews, 4000);
+  }
   wnTranslateBatch(wnData.filter(n => !n._translated)).then(() => {
-    wnRenderList(document.getElementById('wn-search')?.value || '');
-    const geoLoc2 = wnData.filter(n => n.lat != null);
-    if (geoLoc2.length >= 1 && !_wnAutoBusy) {
-      setTimeout(wnStartAutoNews, 4000);
-    }
-  });
+    try { wnRenderList(document.getElementById('wn-search')?.value || ''); } catch (e) {}
+  }).catch(() => {});
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -484,7 +486,8 @@ let _wnCurrentAudio = null;
 function wnSpeakNews(n) {
   const tTitle = n._tTitle || n.title;
   const tSnippet = n._tSnippet || n.snippet;
-  const txt = `Ecco la notizia. ${tTitle}. ${tSnippet}`;
+  /* TTS locale veloce: max ~480 caratteri (oltre scatta il fallback cloud lento) */
+  const txt = `Ecco la notizia. ${tTitle}. ${tSnippet}`.slice(0, 480);
   const voice = 'vivian';
   const btn = document.getElementById('wn-listen-btn');
   if (btn) { btn.textContent = '🔊 ● LIVE'; btn.style.animation = 'wnPulseCrit 0.8s infinite'; }
@@ -498,6 +501,13 @@ function wnSpeakNews(n) {
     _wnCurrentAudio = null;
     wnAutoZoomOut(wnOnNewsComplete);
   };
+  const errFn = (msg) => {
+    if (btn) { btn.textContent = '⚠ Voce non disponibile'; btn.style.animation = ''; }
+    wnStopVoiceWave();
+    _wnCurrentAudio = null;
+    console.error('[WN] TTS:', msg);
+    setTimeout(() => { if (btn) btn.textContent = '🔊 Ascolta'; }, 3000);
+  };
 
   fetch('/api/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:txt, voice, language:'italian'}) })
     .then(r => {
@@ -509,9 +519,9 @@ function wnSpeakNews(n) {
       const a = new Audio(URL.createObjectURL(blob));
       _wnCurrentAudio = a;
       a.onended = doneFn;
-      a.onerror = doneFn;
-      a.play().then(() => {}).catch(doneFn);
-    }).catch(doneFn);
+      a.onerror = () => errFn('audio error');
+      a.play().then(() => {}).catch((e) => errFn(e && e.message || 'play blocked'));
+    }).catch((e) => errFn(e && e.message || 'fetch failed'));
 }
 
 let _wnAutoBusy = false;
@@ -921,8 +931,29 @@ function wnCloseDetail() {
   wnAutoZoomOut();
 }
 
+let _wnLoadingTimer = null;
 function wnRefresh() {
-  fetch('/api/worldnews?max=60').then(r=>r.json()).then(d => wnLoadData(d)).catch(()=>{});
+  /* Feedback immediato: la lista non resta mai vuota/bianca */
+  const list = document.getElementById('wn-news-list');
+  if (list && (!window.wnData || !window.wnData.length)) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:#00f0ff;font:11px monospace;animation:wnPulse 1.2s infinite">⏳ Caricamento notizie...</div>';
+  }
+  const cnt = document.getElementById('wn-count');
+  if (cnt) cnt.textContent = 'caricamento...';
+  if (_wnLoadingTimer) clearTimeout(_wnLoadingTimer);
+  _wnLoadingTimer = setTimeout(() => {
+    const c = document.getElementById('wn-count');
+    if (c && c.textContent === 'caricamento...') c.textContent = 'ancora in caricamento...';
+  }, 8000);
+  fetch('/api/worldnews?max=60')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(d => { if (_wnLoadingTimer) clearTimeout(_wnLoadingTimer); wnLoadData(d); })
+    .catch(() => {
+      if (_wnLoadingTimer) clearTimeout(_wnLoadingTimer);
+      const c2 = document.getElementById('wn-count');
+      if (c2) c2.textContent = 'errore di rete';
+      if (list) list.innerHTML = '<div style="padding:24px;text-align:center;color:#ff6666;font:11px monospace">⚠ Caricamento fallito. <a href="#" onclick="wnRefresh();return false" style="color:#00f0ff">Riprova</a></div>';
+    });
 }
 
 function wnToggleAutoPilot() {

@@ -1,5 +1,6 @@
 """jarvis_worldnews.py — World News with geo-location engine"""
-import json, time, re, xml.etree.ElementTree as ET
+import json, time, re, threading, xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import requests as _req
 import urllib3
@@ -8,6 +9,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 _NEWS_CACHE = {}
 _GEO_CACHE = {}
 _CACHE_TTL = 600
+_CACHE_LOCK = threading.Lock()
+_GDELT_REFRESHING = [False]  # guard contro refresh GDELT concorrenti
+
+_FEED_TIMEOUT = 8  # singolo feed RSS: fail-fast invece di 15s
 
 FEEDS = [
     # ── Italiano ──
@@ -300,9 +305,9 @@ def _categorize(text):
     return "general"
 
 def _fetch_feed(feed):
-    """Fetch e parse singolo feed RSS/Atom."""
+    """Fetch e parse singolo feed RSS/Atom (fail-fast: timeout breve)."""
     try:
-        r = _req.get(feed["url"], headers={"User-Agent": "Jarvis/1.0"}, timeout=15, verify=False)
+        r = _req.get(feed["url"], headers={"User-Agent": "Jarvis/1.0"}, timeout=_FEED_TIMEOUT, verify=False)
         raw = r.content
         root = ET.fromstring(raw)
     except:
@@ -421,28 +426,25 @@ def _compute_stats(news):
         "geo_count": sum(1 for n in news if n.get("lat") is not None),
     }
 
-def fetch_world_news(max_items=50):
-    """Fetch news da RSS + GDELT, geo-localizza, categorizza, sentiment, trending, stats."""
-    now = time.time()
-    if "all_geo" in _NEWS_CACHE and (now - _NEWS_CACHE["all_geo"]["time"]) < _CACHE_TTL:
-        c = _NEWS_CACHE["all_geo"]
-        return {"news": c["data"][:max_items], "total": len(c["data"]),
-                "trending": c.get("trending", []), "stats": c.get("stats", {}),
-                "timestamp": datetime.now().isoformat()}
-
+def _fetch_feeds_parallel():
+    """Fetch tutti gli RSS in parallelo (fail-fast per feed)."""
     all_news = []
-    for feed in FEEDS:
-        all_news.extend(_fetch_feed(feed))
-    # GDELT (best-effort, non blocca se fallisce)
-    try:
-        all_news.extend(_fetch_gdelt())
-    except Exception:
-        pass
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {ex.submit(_fetch_feed, f): f for f in FEEDS}
+        for fut in as_completed(futs):
+            try:
+                all_news.extend(fut.result() or [])
+            except Exception:
+                pass
+    return all_news
 
+
+def _entries_from_raw(all_news):
+    """Deduplica + geo-localizza + categorizza + sentiment + ordina (no I/O)."""
     seen = set()
     geo_news = []
     for item in all_news:
-        dedup = item["title"][:60].lower().strip()
+        dedup = (item.get("title") or "")[:60].lower().strip()
         if not dedup or dedup in seen:
             continue
         seen.add(dedup)
@@ -454,9 +456,9 @@ def fetch_world_news(max_items=50):
         entry = {
             "title": item["title"],
             "snippet": item.get("snippet", ""),
-            "url": item["url"],
-            "source": item["source"],
-            "lang": item["lang"],
+            "url": item.get("url", ""),
+            "source": item.get("source", ""),
+            "lang": item.get("lang", ""),
             "category": cat,
             "sentiment": sentiment,
             "published": item.get("published", ""),
@@ -468,7 +470,7 @@ def fetch_world_news(max_items=50):
             entry["country"] = geo[2]; entry["location"] = geo[3]
         elif item.get("sourcecountry"):
             # fallback: usa il paese della fonte GDELT
-            coord = _COUNTRY_TO_COORD.get(item["sourcecountry"].lower())
+            coord = _COUNTRY_TO_COORD.get((item.get("sourcecountry") or "").lower())
             if coord:
                 entry["lat"] = coord["lat"]; entry["lon"] = coord["lon"]
                 entry["country"] = coord["country"]; entry["location"] = coord["country"]
@@ -476,11 +478,75 @@ def fetch_world_news(max_items=50):
 
     # ordina: geo-localizzate prima, poi per |sentiment| (notizie forti in cima)
     geo_news.sort(key=lambda n: (n.get("lat") is None, -abs(n.get("sentiment", 0))))
+    return geo_news
 
+
+def _store_cache(geo_news):
+    """Ricalcola trending/stats e salva in cache (thread-safe)."""
     trending = _compute_trending(geo_news)
     stats = _compute_stats(geo_news)
-    _NEWS_CACHE["all_geo"] = {"data": geo_news, "time": now,
-                             "trending": trending, "stats": stats}
+    with _CACHE_LOCK:
+        _NEWS_CACHE["all_geo"] = {"data": geo_news, "time": time.time(),
+                                  "trending": trending, "stats": stats}
+    return trending, stats
+
+
+def _gdelt_background_merge():
+    """Thread in background: fetcha GDELT (lento, rate-limited) e lo fonde in cache."""
+    if _GDELT_REFRESHING[0]:
+        return
+    _GDELT_REFRESHING[0] = True
+    try:
+        items = _fetch_gdelt()
+        if not items:
+            return
+        new_entries = _entries_from_raw(items)
+        if not new_entries:
+            return
+        with _CACHE_LOCK:
+            cached = _NEWS_CACHE.get("all_geo", {}).get("data", [])
+            have = { (n.get("title") or "")[:60].lower().strip() for n in cached }
+            merged = list(cached)
+            for n in new_entries:
+                if (n.get("title") or "")[:60].lower().strip() not in have:
+                    merged.append(n)
+            merged.sort(key=lambda n: (n.get("lat") is None, -abs(n.get("sentiment", 0))))
+            _NEWS_CACHE["all_geo"] = {
+                "data": merged, "time": time.time(),
+                "trending": _compute_trending(merged),
+                "stats": _compute_stats(merged),
+            }
+    except Exception:
+        pass
+    finally:
+        _GDELT_REFRESHING[0] = False
+
+
+def fetch_world_news(max_items=50):
+    """Fetch news: RSS in parallelo subito (~1-2s), GDELT fuso in background.
+
+    Il primo hit dopo il restart risponde in ~2s con gli RSS; GDELT
+    (rate-limit 5.5s + API lenta) arriva in cache entro ~40s senza bloccare.
+    """
+    now = time.time()
+    with _CACHE_LOCK:
+        c = _NEWS_CACHE.get("all_geo")
+        if c and (now - c["time"]) < _CACHE_TTL:
+            return {"news": c["data"][:max_items], "total": len(c["data"]),
+                    "trending": c.get("trending", []), "stats": c.get("stats", {}),
+                    "timestamp": datetime.now().isoformat()}
+
+    # Fast path: solo RSS in parallelo
+    all_news = _fetch_feeds_parallel()
+    geo_news = _entries_from_raw(all_news)
+    trending, stats = _store_cache(geo_news)
+
+    # GDELT in background (non blocca la risposta)
+    try:
+        threading.Thread(target=_gdelt_background_merge, daemon=True).start()
+    except Exception:
+        pass
+
     return {"news": geo_news[:max_items], "total": len(geo_news),
             "trending": trending, "stats": stats,
             "timestamp": datetime.now().isoformat()}
