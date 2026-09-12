@@ -11,6 +11,13 @@ MODEL_DIR = DATA_DIR / "yolo"
 DB_PATH = DATA_DIR / "video_analytics.db"
 DEFAULT_RTSP = "rtsp://jarvis:dorina79@192.168.1.9:554/h264Preview_01_main"
 
+# Fail-fast su stream morti: ogni tentativo di apertura max 5s (default ffmpeg ~30s)
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "timeout;5000000")
+# Backoff riconnessioni: 2s → max 5min, auto-stop dopo 20 fallimenti consecutivi
+_RECONNECT_BASE = 2
+_RECONNECT_MAX = 300
+_RECONNECT_GIVEUP = 20
+
 _instances = {}
 _lock = threading.Lock()
 
@@ -351,19 +358,33 @@ class VideoAnalytics:
             self.cap = cv2.VideoCapture(self.stream_url if self.stream_url else 0)
             fps_start = time.time()
             fps_frames = 0
+            fails = 0
             while self.running:
                 if not self.cap or not self.cap.isOpened():
-                    print("[VIDEO] Camera disconnected, reconnecting...")
-                    time.sleep(2)
+                    fails += 1
+                    if fails >= _RECONNECT_GIVEUP:
+                        print(f"[VIDEO] Stream irraggiungibile dopo {fails} tentativi — analytics auto-disabilitata (riattiva via POST /api/video/start)")
+                        self.running = False
+                        break
+                    wait = min(_RECONNECT_BASE * (2 ** (fails - 1)), _RECONNECT_MAX)
+                    print(f"[VIDEO] Camera disconnected, reconnecting in {wait}s (tentativo {fails})...")
+                    time.sleep(wait)
                     self.cap = cv2.VideoCapture(self.stream_url if self.stream_url else 0)
                     continue
                 ret, frame = self.cap.read()
                 if not ret:
-                    print("[VIDEO] Stream ended, reconnecting...")
-                    time.sleep(2)
+                    fails += 1
+                    if fails >= _RECONNECT_GIVEUP:
+                        print(f"[VIDEO] Stream irraggiungibile dopo {fails} tentativi — analytics auto-disabilitata (riattiva via POST /api/video/start)")
+                        self.running = False
+                        break
+                    wait = min(_RECONNECT_BASE * (2 ** (fails - 1)), _RECONNECT_MAX)
+                    print(f"[VIDEO] Stream ended, reconnecting in {wait}s (tentativo {fails})...")
+                    time.sleep(wait)
                     self.cap.release()
                     self.cap = cv2.VideoCapture(self.stream_url if self.stream_url else 0)
                     continue
+                fails = 0  # frame ok → azzera backoff
 
                 fps_frames += 1
                 if fps_frames >= 30:

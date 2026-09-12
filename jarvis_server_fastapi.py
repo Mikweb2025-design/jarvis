@@ -746,6 +746,12 @@ async def lifespan(app: FastAPI):
         threading.Thread(target=_lazy_load_tts, daemon=True).start()
     else:
         _tts_ready.set()
+    # Preload modello embedding RAG in background (prima search lenta altrimenti)
+    try:
+        import threading as _th
+        _th.Thread(target=rag._ensure_model, daemon=True).start()
+    except Exception:
+        pass
     _rag_docs_dir = Path(__file__).parent / "data" / "documents"
     if _rag_docs_dir.exists():
         any_files = any(_rag_docs_dir.iterdir())
@@ -765,10 +771,11 @@ async def lifespan(app: FastAPI):
             telegram_start()
         except:
             pass
+    # Video analytics: SOLO su richiesta (POST /api/video/start).
+    # L'auto-start bruciava 30-50% CPU contro una camera irraggiungibile.
     try:
-        from jarvis_video_analytics import start_analytics
-        start_analytics()
-    except:
+        logger.info("[VIDEO] Analytics in standby (on-demand via POST /api/video/start)")
+    except Exception:
         pass
     try:
         _ensure_openwa_running()

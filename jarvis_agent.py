@@ -956,7 +956,15 @@ TONO: Equilibrato e professionale. Come l'AI di Tony Stark.
             resp = requests.post(LLM_URL, json=payload, headers=headers, timeout=45)
             reply = resp.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            reply = f"[Errore connessione] {e}"
+            # Fallback automatico su Ollama locale (stesso pattern di chat_stream)
+            if self.cfg.get("ollama", {}).get("enabled", False):
+                print(f"[INFO] IONOS fallito ({e}), provo Ollama...")
+                try:
+                    reply = self._ollama_chat(messages, payload)
+                except Exception as oe:
+                    reply = f"[Errore connessione] {e} (Ollama: {oe})"
+            else:
+                reply = f"[Errore connessione] {e}"
         self.history.append({"role": "assistant", "content": reply})
         memory.log_conversation("assistant", reply)
         self._update_conversation_summary(user_message, reply)

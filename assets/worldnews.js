@@ -482,6 +482,25 @@ function wnHUDDataBurst(n) {
 
 /* ── TTS ── */
 let _wnCurrentAudio = null;
+let _wnLastAudioUrl = null;
+
+/* Sblocca l'audio al primo gesto utente (autoplay policy dei browser) */
+(function wnAudioUnlock() {
+  const unlock = () => {
+    try {
+      window._wnAudioCtx = window._wnAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (window._wnAudioCtx.state === 'suspended') window._wnAudioCtx.resume();
+    } catch (e) {}
+    if (_wnLastAudioUrl && !_wnCurrentAudio) {
+      /* c'era un audio bloccato in attesa: riproducilo ora */
+      const a = new Audio(_wnLastAudioUrl);
+      _wnCurrentAudio = a;
+      a.play().catch(() => { _wnCurrentAudio = null; });
+    }
+  };
+  document.addEventListener('pointerdown', unlock, true);
+  document.addEventListener('keydown', unlock, true);
+})();
 
 function wnSpeakNews(n) {
   const tTitle = n._tTitle || n.title;
@@ -494,6 +513,9 @@ function wnSpeakNews(n) {
   wnStartVoiceWave();
 
   if (_wnCurrentAudio) { _wnCurrentAudio.pause(); _wnCurrentAudio = null; }
+  _wnSpeakSeq = (_wnSpeakSeq || 0) + 1;
+  const mySeq = _wnSpeakSeq;
+  _wnLastAudioUrl = null;
 
   const doneFn = () => {
     if (btn) { btn.textContent = '🔊 Ascolta'; btn.style.animation = ''; }
@@ -516,11 +538,24 @@ function wnSpeakNews(n) {
       if (ct.includes('json')) return r.json().then(j => { throw new Error(j.error || 'TTS JSON response'); });
       return r.blob();
     }).then(blob => {
-      const a = new Audio(URL.createObjectURL(blob));
+      if (mySeq !== _wnSpeakSeq) return; /* notizia cambiata nel frattempo: scarta */
+      try {
+        window._wnAudioCtx = window._wnAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (window._wnAudioCtx.state === 'suspended') window._wnAudioCtx.resume();
+      } catch (e) {}
+      _wnLastAudioUrl = URL.createObjectURL(blob);
+      const a = new Audio(_wnLastAudioUrl);
       _wnCurrentAudio = a;
-      a.onended = doneFn;
+      a.onended = () => { _wnLastAudioUrl = null; doneFn(); };
       a.onerror = () => errFn('audio error');
-      a.play().then(() => {}).catch((e) => errFn(e && e.message || 'play blocked'));
+      a.play().then(() => {}).catch((e) => {
+        /* Browser blocca l'autoplay senza gesto: conserva l'audio, parte al primo click */
+        _wnCurrentAudio = null;
+        if (btn) { btn.textContent = '🔇 Clicca per ascoltare'; btn.style.animation = 'wnPulseCrit 0.8s infinite'; }
+        wnStopVoiceWave();
+        console.warn('[WN] autoplay bloccato, in attesa di gesto utente');
+        setTimeout(() => { if (btn && btn.textContent.includes('Clicca')) { btn.textContent = '🔊 Ascolta'; btn.style.animation = ''; } }, 8000);
+      });
     }).catch((e) => errFn(e && e.message || 'fetch failed'));
 }
 

@@ -33,6 +33,9 @@ class JarvisRAG:
         self._model = None
         self._model_name = None
         self._model_loaded = False
+        self._stats_cache = None
+        self._stats_cache_t = 0.0
+        self._STATS_TTL = 60.0  # /api/status lo chiama a ogni refresh: evita full-scan a ogni hit
 
     def _ensure_model(self):
         if not self._model_loaded:
@@ -431,7 +434,11 @@ class JarvisRAG:
         return {"status": "ok", "message": "Tutti i documenti eliminati"}
     
     def stats(self) -> dict:
-        """Statistiche RAG"""
+        """Statistiche RAG (cache 60s: la COUNT su embedding JSON è lenta su 4k+ chunk)"""
+        import time as _t
+        now = _t.time()
+        if self._stats_cache and (now - self._stats_cache_t) < self._STATS_TTL:
+            return self._stats_cache
         c = self.db.cursor()
         c.execute("SELECT COUNT(*) as total FROM documents")
         docs = c.fetchone()["total"]
@@ -439,12 +446,18 @@ class JarvisRAG:
         chunks = c.fetchone()["total"]
         c.execute("SELECT COUNT(*) as total FROM document_chunks WHERE embedding IS NOT NULL AND embedding != ''")
         with_emb = c.fetchone()["total"]
-        return {
+        self._stats_cache = {
             "documents": docs,
             "chunks": chunks,
             "embedded_chunks": with_emb,
             "model": self._model_name or "none (hash fallback)"
         }
+        self._stats_cache_t = now
+        return self._stats_cache
+
+    def invalidate_stats(self):
+        """Da chiamare dopo add/delete documenti."""
+        self._stats_cache = None
     
     def _auto_embed_pending(self):
         """All'avvio, genera embedding per chunk che ne sono sprovvisti"""
