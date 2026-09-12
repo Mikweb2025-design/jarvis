@@ -29,9 +29,21 @@ function showError(msg){
 window.addEventListener('error', (e)=>{ showError('ERR: '+(e.message||e.error||'unknown')) });
 window.addEventListener('unhandledrejection', (e)=>{ showError('PROMISE: '+(e.reason&&e.reason.message||e.reason||'unknown')) });
 
+let _avatarInited = false;
 function initThree(){
+  if (_avatarInited) return true;
   const canvas = document.getElementById('avatar3d-canvas');
-  if(!canvas){ showError('canvas non trovato'); return false; }
+  if(!canvas){
+    /* La pagina chat (con il canvas) arriva via XHR dopo DOMContentLoaded: riprova */
+    if (!window._avatarRetryN) window._avatarRetryN = 0;
+    if (window._avatarRetryN < 40) {
+      window._avatarRetryN++;
+      setTimeout(initThree, 500);
+    } else {
+      showError('canvas non trovato');
+    }
+    return false;
+  }
   try{
     renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true, premultipliedAlpha:false});
   }catch(e){ showError('WebGL init fail: '+e.message); return false; }
@@ -57,6 +69,7 @@ function initThree(){
 
   clock = new THREE.Clock();
   showLoading('CARICANDO MODELLO 3D...');
+  _avatarInited = true;
   loadAvatar();
   window.addEventListener('resize', resize);
   try{
